@@ -1,0 +1,8 @@
+name = "invoice-v2"
+compatibility_date = "2025-10-01"
+pages_build_output_dir = "."
+
+[[d1_databases]]
+binding = "DB"
+database_name = "invoice-v2-db"
+database_id = "43581b02-870c-41b7-a7c8-ed5bf2185854"

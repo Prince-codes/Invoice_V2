@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cloud Invoice Management</title>
+  <link rel="stylesheet" href="management.css" />
+</head>
+<body>
+  <main class="management-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Invoice workspace</p>
+        <h1>Cloud Invoice Management</h1>
+      </div>
+      <div class="header-actions">
+        <span id="userDisplay" class="user-display">Signed in as: Guest</span>
+        <button id="backBtn" class="btn secondary" type="button">Back to Selection</button>
+      </div>
+    </header>
+
+    <section class="toolbar card">
+      <div class="field-group">
+        <label for="moduleFilter">Module</label>
+        <select id="moduleFilter">
+          <option value="mod1">Mod 1 — New Monthly Bill</option>
+          <option value="mod2">Mod 2 — Daily Bill</option>
+          <option value="mod3">Mod 3 — Old Monthly Bill</option>
+        </select>
+      </div>
+
+      <div class="field-group inline-actions">
+        <button id="loadInvoicesBtn" class="btn primary" type="button">Load Invoices</button>
+        <button id="exportCsvBtn" class="btn" type="button">Export CSV</button>
+        <button id="exportExcelBtn" class="btn" type="button">Export Excel</button>
+        <button id="exportPdfBtn" class="btn" type="button">Export PDF</button>
+      </div>
+    </section>
+
+    <section class="card table-card">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Customer</th>
+              <th>Module</th>
+              <th>Date</th>
+              <th>Total</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="invoiceTableBody">
+            <tr>
+              <td colspan="6" class="empty-state">No cloud invoices loaded.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div id="invoiceDetailModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-content large">
+      <header>
+        <h2>Invoice Details</h2>
+        <button class="close-btn" id="closeDetailModal" type="button" aria-label="Close">&times;</button>
+      </header>
+      <div id="invoiceDetailContent" class="detail-body"></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.sheetjs.com/xlsx-0.18.5/package/dist/xlsx.full.min.js"></script>
+  <script src="management.js"></script>
+</body>
+</html>

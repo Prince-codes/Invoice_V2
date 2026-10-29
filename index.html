@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Shankar Vegetable Shop</title>
+    <link rel="stylesheet" href="login.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="header-bar">
+      <img src="Assets/logo.png" alt="Logo" class="logo-header">
+      <span class="company-name">Shankar Vegetable Shop</span>
+    </div>
+    <div class="split-layout">
+      <div class="left-panel">
+        <div class="welcome-text">
+          <h1>Welcome Back</h1>
+          <p>Glad to see you again.<br>Access your invoices and manage your account securely.</p>
+        </div>  
+      </div>
+      <div class="right-panel">
+        <div class="login-container glass">
+          <div class="icon-circle"><i class="fa fa-user"></i></div>
+          <h2 class="login-heading">Login</h2>
+          <input type="text" id="username" placeholder="Username" />
+          <div class="password-wrapper">
+            <input type="password" id="password" placeholder="Password" />
+            <button type="button" id="togglePassword" class="toggle-password"><i class="fa fa-eye"></i></button>
+          </div>
+          <button id="loginBtn" class="neon-btn">Login</button>
+          <p id="errorMsg"></p>
+        </div>
+      </div>
+    </div>
+
+<script src="login.js"></script>
+</body>
+</html>
+

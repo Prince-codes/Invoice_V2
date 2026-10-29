@@ -1,90 +1,63 @@
 # Invoice Generator
 
-## Overview
-This project is a web-based Invoice Generator designed to help users create, view, and manage invoices efficiently. It features user authentication, invoice creation, previous bills management, and a clean, scrollable UI for reviewing past invoices.
+This project is a simple invoice-generation website created especially for My Friend business. It helps the business owner prepare, save, review, export, and print invoices from a browser.
 
-## Features
-- **User Authentication:** Secure login system for authorized access.
-- **Invoice Creation:** Generate invoices with customer details, itemized billing, and automatic calculation of totals.
-- **Month & Year Selection:** Select billing month and year; correct month names are displayed in invoices.
-- **Previous Bills Modal:** View all previously generated invoices in a scrollable modal table, sorted by ID in ascending order.
-- **Print & Save:** Print invoices directly from the app and save them for future reference.
-- **Responsive UI:** Clean, modern interface with scrollable tables and modals for easy navigation.
+## What It Does
 
-## Folder Structure
+The application provides two invoice options:
+
+- **Monthly Bill**: enter daily amounts for a selected customer, month, and year.
+- **Date Bill**: enter products, quantities, quote prices, and calculated prices for one billing date.
+
+Both options support saving invoice records, viewing previous invoices, and printing completed invoices. The layout works on desktop and mobile screens.
+  
+
+## Invoice Data
+
+Invoice records are saved in the browser's local storage. This means the records belong to the browser and device being used. They do not automatically appear on another device or browser.
+
+Use **Export CSV** regularly to keep a backup. Clearing browser data can remove locally saved invoices.
+
+
+## Cloudflare Deployment Setup
+
+This project uses **Cloudflare Pages**, not a standalone Cloudflare Worker. The frontend is static, Pages Functions are in `functions/api`, and the D1 database binding is named `DB`.
+
+The `wrangler.toml` file configures Pages Functions and D1. The dashboard's drag-and-drop uploader does not deploy projects using this configuration file; do not remove the file just to get past that uploader message.
+
+### Recommended: Git-connected Pages project
+
+1. In Cloudflare, select **Workers & Pages → Create application → Pages → Connect to Git**. Do not select Workers or the drag-and-drop uploader.
+2. Connect this GitHub repository and select its production branch.
+3. Use the repository root as the root directory. Leave the build command blank and set the build output directory to `.`.
+4. Create a D1 database and bind it to Pages Functions with the binding name `DB`.
+5. Replace the placeholder `database_id` in `wrangler.toml` with the actual D1 database ID before deploying with the Wrangler configuration file. Alternatively, download the existing Pages project configuration with `npx wrangler pages download config` and use that generated configuration.
+6. Deploy and verify `/api/invoices` and `/management.html`.
+
+The project should be created as a **Pages project** with Git integration. Cloudflare Pages Git integration automatically deploys pushes to the production branch. If the project was created as a Direct Upload project instead, it cannot later be converted to Git integration; create a new Pages project with Git integration.
+
+### Local Development Command
+
+For Pages local development, use:
+
+```bash
+npx wrangler pages dev .
 ```
-Invoice_generator/
-  public/
-    login.css         # Styles for login and modal UI
-    login.html        # Login page
-    logo.png          # App logo
-    main.css          # Main app styles
-    main.html         # Main app page
-    js/
-      main.js         # Core client-side logic
-  auth.js             # Authentication logic
-  db.js               # Database connection and queries
-  package.json        # Project dependencies and scripts
-  server.js           # Express server setup
+
+For a Pages Direct Upload project, deploy with the Pages-specific command (not `wrangler deploy`):
+
+```bash
+npx wrangler pages deploy . --project-name invoice-v2
 ```
 
-## Requirements
-- **Node.js** (v14+ recommended)
-- **npm** (v6+ recommended)
-- **Express** (for server)
-- **Database:** MongoDB or compatible (see `db.js` for details)
+The direct-upload command is not the recommended Git-connected deployment workflow for this repository.
 
-## Installation
-1. **Clone the repository:**
-   ```powershell
-   git clone <repo-url>
-   cd Invoice_generator
-   ```
-2. **Install dependencies:**
-   ```powershell
-   npm install
-   ```
-3. **Set up the database:**
-   - Configure your MongoDB connection in `db.js`.
-   - Ensure MongoDB is running locally or remotely.
-4. **Start the server:**
-   ```powershell
-   node server.js
-   ```
+### Important Notes
 
-## Usage
-- Open `http://localhost:3000` in your browser.
-- Log in using your credentials.
-- Create new invoices, view previous bills, and print as needed.
-- Use the month/year selectors to filter and generate invoices for specific periods.
+- Keep all database credentials and secrets in Cloudflare environment settings, not in frontend JavaScript.
+- The project continues to keep browser-stored local invoice data as-is and uses cloud storage only for the new invoice-management workflow.
+- Existing invoice layouts and modules should remain functional after deployment.
 
-## Project Manual
-### Authentication
-- Login page (`login.html`) handles user authentication.
-- Credentials are verified via server-side logic in `auth.js`.
+## Owner
 
-### Invoice Creation
-- Fill in customer and billing details in the main app page (`main.html`).
-- Items and amounts are entered; totals are calculated automatically.
-- Month and year selection ensures correct billing period.
-
-### Previous Bills Modal
-- Access previous invoices via the modal.
-- Table is scrollable and sorted by ID.
-- Print logic and buttons are removed for a cleaner view.
-
-### Printing & Saving
-- Invoices can be printed directly from the app.
-- Saved invoices are retrievable from the previous bills modal.
-
-### UI/UX
-- Styles are managed in `login.css` and `main.css`.
-- Modal and table layouts are optimized for usability.
-
-
-## License
-This project is for educational and internal use. Please contact the author for licensing details.
-
-## Author
-- PRINCE RAJ SINGH
-- Contact: SILENCE11444@GMAIL.COM
+Copyright (c) CARNAGE SENTINELS.
