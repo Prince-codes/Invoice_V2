@@ -18,7 +18,6 @@
       invoiceId: base.invoiceId || base.invoice_id || null,
       customer_name: base.customerName || base.customer_name || 'Customer',
       customerName: base.customerName || base.customer_name || 'Customer',
-      created_by: sessionStorage.getItem('loggedInUser') || 'admin',
       invoice_data: base
     };
   }

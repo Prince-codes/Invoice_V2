@@ -25,6 +25,20 @@ This project uses **Cloudflare Pages**, not a standalone Cloudflare Worker. The 
 
 The `wrangler.toml` file configures Pages Functions and D1. The dashboard's drag-and-drop uploader does not deploy projects using this configuration file; do not remove the file just to get past that uploader message.
 
+### Login Security
+
+The login is verified by Pages Functions. It no longer uses the browser's editable `localStorage` as a credential store. Protected pages and invoice API requests require an eight-hour, signed, HTTP-only session cookie.
+
+Before deploying, add these values in **Cloudflare Pages → Settings → Variables and Secrets** for every environment you use (Production and Preview):
+
+- `LOGIN_USERNAME`: the login username.
+- `LOGIN_PASSWORD`: a unique password with at least 12 characters. Store it as a secret.
+- `SESSION_SECRET`: a randomly generated secret with at least 32 characters. Store it as a secret; for example, generate one with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
+
+Do not use the old browser-stored default password. There is no fallback credential: login remains unavailable until all three server-side values are configured. After adding or changing secrets, redeploy the Pages project.
+
+For local development, put the same variable names in an untracked `.dev.vars` file in the project root and never commit that file. Configure a Cloudflare rate-limiting rule for `POST /api/auth/login` as an additional defense against password guessing.
+
 ### Recommended: Git-connected Pages project
 
 1. In Cloudflare, select **Workers & Pages → Create application → Pages → Connect to Git**. Do not select Workers or the drag-and-drop uploader.

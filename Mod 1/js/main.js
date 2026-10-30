@@ -1,11 +1,8 @@
 // js/main.js — client-side invoice storage (localStorage + CSV), and login/session checks
 document.addEventListener('DOMContentLoaded', () => {
-  const loggedIn = sessionStorage.getItem('loggedInUser');
-
-  const userDisplay = document.getElementById('userDisplay');
-  if (userDisplay) {
-    userDisplay.textContent = loggedIn ? `Signed in as: ${loggedIn}` : 'Signed in as: Guest';
-  }
+  window.InvoiceAuth.initializeUserDisplay('userDisplay').catch((error) => {
+    console.error('Unable to verify the login session:', error);
+  });
 
   const monthSelect = document.getElementById('month');
   const yearSelect = document.getElementById('year');
@@ -76,12 +73,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (closeModal) closeModal.addEventListener('click', close);
   if (cancelBtn) cancelBtn.addEventListener('click', close);
 
-  if (logoutBtn) {
-    logoutBtn.addEventListener('click', () => {
-      sessionStorage.removeItem('loggedInUser');
-      window.location.href = '../index.html';
-    });
-  }
+  window.InvoiceAuth.bindLogout('logoutBtn');
 
   function close() {
     if (modal) modal.classList.remove('show');
@@ -629,7 +621,7 @@ document.addEventListener('DOMContentLoaded', () => {
       totals: { t1: Number(t1), t2: Number(t2), grand: Number((t1 + t2).toFixed(2)) },
       totalWords: amountWords.value || '',
       createdAt: new Date().toISOString(),
-      createdBy: sessionStorage.getItem('loggedInUser') || ''
+      createdBy: ''
     };
   }
 

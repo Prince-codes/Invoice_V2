@@ -1,5 +1,5 @@
 export async function onRequest(context) {
-  const { request, env } = context;
+  const { request, env, data } = context;
   const url = new URL(request.url);
 
   if (!env.DB) {
@@ -13,7 +13,7 @@ export async function onRequest(context) {
         module TEXT NOT NULL,
         invoice_id TEXT NOT NULL,
         customer_name TEXT NOT NULL,
-        created_by TEXT NOT NULL DEFAULT 'admin',
+        created_by TEXT NOT NULL,
         invoice_data TEXT NOT NULL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
@@ -26,14 +26,7 @@ export async function onRequest(context) {
   const method = request.method.toUpperCase();
 
   if (method === 'OPTIONS') {
-    return new Response(null, {
-      status: 204,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization'
-      }
-    });
+    return new Response(null, { status: 204 });
   }
 
   if (method === 'GET') {
@@ -81,7 +74,7 @@ export async function onRequest(context) {
     const result = await env.DB.prepare(`
       INSERT INTO invoices (module, invoice_id, customer_name, created_by, invoice_data, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).bind(module, invoiceId, customerName, payload.created_by || 'admin', invoiceData, now, now).run();
+    `).bind(module, invoiceId, customerName, data.username, invoiceData, now, now).run();
 
     const created = await env.DB.prepare('SELECT * FROM invoices WHERE id = ?').bind(result.meta.last_row_id).first();
     return jsonResponse({ message: 'Invoice saved to cloud.', invoice: serializeInvoice(created) }, 201);
@@ -102,7 +95,7 @@ export async function onRequest(context) {
       UPDATE invoices
       SET module = ?, invoice_id = ?, customer_name = ?, created_by = ?, invoice_data = ?, updated_at = ?
       WHERE id = ?
-    `).bind(module, invoiceId, customerName, payload.created_by || 'admin', invoiceData, now, id).run();
+    `).bind(module, invoiceId, customerName, data.username, invoiceData, now, id).run();
 
     const updated = await env.DB.prepare('SELECT * FROM invoices WHERE id = ?').bind(id).first();
     return jsonResponse({ message: 'Invoice updated.', invoice: serializeInvoice(updated) }, 200);
@@ -177,9 +170,7 @@ function jsonResponse(data, status = 200) {
     status,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+      'Cache-Control': 'no-store'
     }
   });
 }

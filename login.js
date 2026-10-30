@@ -1,56 +1,56 @@
 document.addEventListener('DOMContentLoaded', () => {
-  const raw = localStorage.getItem('users');
-  if (!raw) {
-    const defaultUsers = [{ username: 'admin', password: '47258369' }];
-    localStorage.setItem('users', JSON.stringify(defaultUsers));
-  }
-
-  const loginBtn = document.getElementById('loginBtn');
-  const err = document.getElementById('errorMsg');
+  const form = document.getElementById('loginForm');
+  const usernameInput = document.getElementById('username');
   const passwordInput = document.getElementById('password');
+  const loginButton = document.getElementById('loginBtn');
   const togglePassword = document.getElementById('togglePassword');
+  const errorMessage = document.getElementById('errorMsg');
 
-  loginBtn.addEventListener('click', () => {
-    const username = document.getElementById('username').value.trim();
-    const password = passwordInput.value.trim();
-    err.innerText = '';
+  fetch('/api/auth/session', { cache: 'no-store' })
+    .then((response) => {
+      if (response.ok) window.location.replace('Selection/selection.html');
+    })
+    .catch(() => {
+      errorMessage.textContent = 'Unable to verify your session. Check your connection and try again.';
+    });
 
-    if (!username || !password) {
-      err.innerText = 'Enter username and password.';
-      return;
-    }
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    errorMessage.textContent = '';
+    loginButton.disabled = true;
 
-    let users = [];
     try {
-      users = JSON.parse(localStorage.getItem('users') || '[]');
-    } catch (e) {
-      users = [];
-    }
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: usernameInput.value.trim(),
+          password: passwordInput.value
+        })
+      });
+      const result = await response.json();
 
-    const found = users.find(u => u.username === username && u.password === password);
-    if (found) {
-      sessionStorage.setItem('loggedInUser', username);
-      window.location.href = 'Selection/selection.html';
-    } else {
-      err.innerText = 'Invalid credentials.';
-    }
-  });
+      if (!response.ok) {
+        errorMessage.textContent = result.error || 'Unable to sign in.';
+        return;
+      }
 
-  togglePassword.addEventListener('click', function () {
-    const pwd = passwordInput;
-    const icon = this.querySelector('i');
-    if (pwd.type === 'password') {
-      pwd.type = 'text';
-      icon.classList.remove('fa-eye');
-      icon.classList.add('fa-eye-slash');
-    } else {
-      pwd.type = 'password';
-      icon.classList.remove('fa-eye-slash');
-      icon.classList.add('fa-eye');
+      window.location.replace('Selection/selection.html');
+    } catch (error) {
+      console.error('Login request failed:', error);
+      errorMessage.textContent = 'Unable to sign in. Check your connection and try again.';
+    } finally {
+      loginButton.disabled = false;
     }
   });
 
-  passwordInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') loginBtn.click();
+  togglePassword.addEventListener('click', () => {
+    const showPassword = passwordInput.type === 'password';
+    passwordInput.type = showPassword ? 'text' : 'password';
+    togglePassword.setAttribute('aria-label', showPassword ? 'Hide password' : 'Show password');
+
+    const icon = togglePassword.querySelector('i');
+    icon.classList.toggle('fa-eye', !showPassword);
+    icon.classList.toggle('fa-eye-slash', showPassword);
   });
 });

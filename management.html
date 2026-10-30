@@ -3,21 +3,33 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Cloud Invoice Management</title>
+  <title>Cloud Invoice Management - Shankar Vegetable Shop</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="management.css" />
 </head>
 <body>
   <main class="management-shell">
     <header class="topbar">
-      <div>
-        <p class="eyebrow">Invoice workspace</p>
-        <h1>Cloud Invoice Management</h1>
-      </div>
+      <a class="management-brand" href="Selection/selection.html" aria-label="Shankar Vegetable Shop home">
+        <img src="Assets/logo.png" alt="Shankar Vegetable Shop logo" />
+        <span class="brand-info">
+          <span class="brand-name">Shankar Vegetable Shop</span>
+          <span class="brand-address">Gamharia market complex - 832108</span>
+        </span>
+      </a>
       <div class="header-actions">
         <span id="userDisplay" class="user-display">Signed in as: Guest</span>
         <button id="backBtn" class="btn secondary" type="button">Back to Selection</button>
+        <button id="logoutBtn" class="btn" type="button">Log out</button>
       </div>
     </header>
+
+    <section class="page-heading" aria-labelledby="pageTitle">
+      <p class="eyebrow">Invoice workspace</p>
+      <h1 id="pageTitle">Cloud Invoice Management</h1>
+    </section>
 
     <section class="toolbar card">
       <div class="field-group">
@@ -71,6 +83,7 @@
   </div>
 
   <script src="https://cdn.sheetjs.com/xlsx-0.18.5/package/dist/xlsx.full.min.js"></script>
+  <script src="auth-client.js"></script>
   <script src="management.js"></script>
 </body>
 </html>

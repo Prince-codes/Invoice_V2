@@ -23,13 +23,15 @@
         <div class="login-container glass">
           <div class="icon-circle"><i class="fa fa-user"></i></div>
           <h2 class="login-heading">Login</h2>
-          <input type="text" id="username" placeholder="Username" />
-          <div class="password-wrapper">
-            <input type="password" id="password" placeholder="Password" />
-            <button type="button" id="togglePassword" class="toggle-password"><i class="fa fa-eye"></i></button>
-          </div>
-          <button id="loginBtn" class="neon-btn">Login</button>
-          <p id="errorMsg"></p>
+          <form id="loginForm">
+            <input type="text" id="username" name="username" placeholder="Username" autocomplete="username" maxlength="128" required />
+            <div class="password-wrapper">
+              <input type="password" id="password" name="password" placeholder="Password" autocomplete="current-password" maxlength="1024" required />
+              <button type="button" id="togglePassword" class="toggle-password" aria-label="Show password"><i class="fa fa-eye"></i></button>
+            </div>
+            <button id="loginBtn" class="neon-btn" type="submit">Login</button>
+          </form>
+          <p id="errorMsg" role="alert" aria-live="polite"></p>
         </div>
       </div>
     </div>
@@ -37,4 +39,3 @@
 <script src="login.js"></script>
 </body>
 </html>
-

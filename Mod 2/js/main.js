@@ -1,6 +1,5 @@
 // Client-side invoice storage, item editor, CSV transfer, and printing.
 document.addEventListener('DOMContentLoaded', () => {
-  const userDisplay = document.getElementById('userDisplay');
   const customerInput = document.getElementById('customer');
   const billingDateInput = document.getElementById('billingDate');
   const openBtn = document.getElementById('openBtn');
@@ -20,13 +19,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const printEditedBtn = document.getElementById('printEditedBtn');
   const previousBillsModal = document.getElementById('previousBillsModal');
   const previousBillsTableBody = document.querySelector('#previousBillsTable tbody');
-  const loggedIn = sessionStorage.getItem('loggedInUser');
   let editingInvoiceId = null;
   let saveInProgress = false;
 
-  if (userDisplay) {
-    userDisplay.textContent = loggedIn ? `Signed in as: ${loggedIn}` : 'Signed in as: Guest';
-  }
+  window.InvoiceAuth.initializeUserDisplay('userDisplay').catch((error) => {
+    console.error('Unable to verify the login session:', error);
+  });
 
   if (billingDateInput) {
     billingDateInput.value = new Date().toISOString().slice(0, 10);
@@ -40,10 +38,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('closeModal').addEventListener('click', closeEditor);
   document.getElementById('cancelBtn').addEventListener('click', closeEditor);
-  document.getElementById('logoutBtn').addEventListener('click', () => {
-    sessionStorage.removeItem('loggedInUser');
-    window.location.href = '../index.html';
-  });
+  window.InvoiceAuth.bindLogout('logoutBtn');
 
   function setEditorButtonMode(editMode) {
     saveBtn.classList.toggle('is-hidden', editMode);
@@ -207,7 +202,7 @@ document.addEventListener('DOMContentLoaded', () => {
       totals: { grand: Number(total.toFixed(2)) },
       totalWords: amountWords.value || numberToWords(Math.round(total)),
       createdAt: new Date().toISOString(),
-      createdBy: loggedIn || ''
+      createdBy: ''
     };
   }
 

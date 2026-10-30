@@ -1,21 +1,19 @@
 const moduleFilter = document.getElementById('moduleFilter');
 const invoiceTableBody = document.getElementById('invoiceTableBody');
-const userDisplay = document.getElementById('userDisplay');
 const detailModal = document.getElementById('invoiceDetailModal');
 const detailContent = document.getElementById('invoiceDetailContent');
 const backBtn = document.getElementById('backBtn');
 const closeBtn = document.getElementById('closeDetailModal');
 
-const loggedInUser = sessionStorage.getItem('loggedInUser') || 'Guest';
-userDisplay.textContent = `Signed in as: ${loggedInUser}`;
-
-if (!sessionStorage.getItem('loggedInUser')) {
-  window.location.replace('index.html');
-}
+window.InvoiceAuth.initializeUserDisplay('userDisplay').catch((error) => {
+  console.error('Unable to verify the login session:', error);
+});
 
 backBtn.addEventListener('click', () => {
   window.location.href = 'Selection/selection.html';
 });
+
+window.InvoiceAuth.bindLogout('logoutBtn');
 
 closeBtn.addEventListener('click', closeDetailModal);
 
