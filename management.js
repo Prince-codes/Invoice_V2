@@ -4,10 +4,32 @@ const detailModal = document.getElementById('invoiceDetailModal');
 const detailContent = document.getElementById('invoiceDetailContent');
 const backBtn = document.getElementById('backBtn');
 const closeBtn = document.getElementById('closeDetailModal');
+const loadButton = document.getElementById('loadInvoicesBtn');
+const previousPageButton = document.getElementById('previousPageBtn');
+const nextPageButton = document.getElementById('nextPageBtn');
+const paginationStatus = document.getElementById('paginationStatus');
+const exportStatus = document.getElementById('exportStatus');
+const exportButtons = [
+  document.getElementById('exportCsvBtn'),
+  document.getElementById('exportExcelBtn'),
+  document.getElementById('exportPdfBtn')
+];
 
-window.InvoiceAuth.initializeUserDisplay('userDisplay').catch((error) => {
-  console.error('Unable to verify the login session:', error);
-});
+const PAGE_SIZE = 50;
+let currentPage = 0;
+let totalInvoices = 0;
+let requestSequence = 0;
+let currentLoadController = null;
+let invoicesCache = [];
+
+window.InvoiceAuth.initializeUserDisplay('userDisplay')
+  .then((username) => {
+    if (username) loadInvoices(0);
+  })
+  .catch((error) => {
+    console.error('Unable to verify the login session:', error);
+    paginationStatus.textContent = 'Unable to verify your login session.';
+  });
 
 backBtn.addEventListener('click', () => {
   window.location.href = 'Selection/selection.html';
@@ -17,30 +39,70 @@ window.InvoiceAuth.bindLogout('logoutBtn');
 
 closeBtn.addEventListener('click', closeDetailModal);
 
-document.getElementById('loadInvoicesBtn').addEventListener('click', loadInvoices);
+loadButton.addEventListener('click', () => loadInvoices(0));
+previousPageButton.addEventListener('click', () => loadInvoices(currentPage - 1));
+nextPageButton.addEventListener('click', () => loadInvoices(currentPage + 1));
+moduleFilter.addEventListener('change', () => loadInvoices(0));
 document.getElementById('exportCsvBtn').addEventListener('click', exportCurrentModuleCsv);
 document.getElementById('exportExcelBtn').addEventListener('click', exportCurrentModuleExcel);
-document.getElementById('exportPdfBtn').addEventListener('click', exportCurrentModulePdf);
+document.getElementById('exportPdfBtn').addEventListener('click', exportAllModulePdfs);
 
-let invoicesCache = [];
+async function loadInvoices(page = currentPage) {
+  if (page < 0) return;
+  if (currentLoadController) currentLoadController.abort();
 
-async function loadInvoices() {
-  const module = moduleFilter.value;
+  const controller = new AbortController();
+  currentLoadController = controller;
+  const sequence = ++requestSequence;
+  const offset = page * PAGE_SIZE;
+  loadButton.disabled = true;
+  previousPageButton.disabled = true;
+  nextPageButton.disabled = true;
+  paginationStatus.textContent = 'Loading invoices…';
+
   try {
-    const response = await fetch(`/api/invoices?module=${encodeURIComponent(module)}`);
+    const query = new URLSearchParams({
+      module: moduleFilter.value,
+      limit: String(PAGE_SIZE),
+      offset: String(offset),
+      summary: '1'
+    });
+    const response = await fetch(`/api/invoices?${query}`, {
+      cache: 'no-store',
+      signal: controller.signal
+    });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || 'Unable to load invoices.');
 
     invoicesCache = payload.invoices || [];
+    currentPage = page;
+    totalInvoices = Number(payload.total || 0);
     renderTable(invoicesCache);
+    updatePagination();
   } catch (error) {
-    alert(error.message || 'Unable to load invoices.');
+    if (error.name !== 'AbortError' && sequence === requestSequence) {
+      paginationStatus.textContent = 'Unable to load invoices.';
+      alert(error.message || 'Unable to load invoices.');
+    }
+  } finally {
+    if (sequence === requestSequence) {
+      loadButton.disabled = false;
+      currentLoadController = null;
+    }
   }
+}
+
+function updatePagination() {
+  const start = totalInvoices ? currentPage * PAGE_SIZE + 1 : 0;
+  const end = Math.min((currentPage + 1) * PAGE_SIZE, totalInvoices);
+  paginationStatus.textContent = `Showing ${start}–${end} of ${totalInvoices} invoices`;
+  previousPageButton.disabled = currentPage === 0;
+  nextPageButton.disabled = (currentPage + 1) * PAGE_SIZE >= totalInvoices;
 }
 
 function renderTable(rows) {
   if (!rows.length) {
-    invoiceTableBody.innerHTML = '<tr><td colspan="6" class="empty-state">No invoices found for this module.</td></tr>';
+    invoiceTableBody.innerHTML = `<tr><td colspan="6" class="empty-state">${totalInvoices ? 'No invoices on this page.' : 'No invoices found for this module.'}</td></tr>`;
     return;
   }
 
@@ -48,12 +110,12 @@ function renderTable(rows) {
     const invoiceData = invoice.invoice_data || {};
     const total = Number(invoice.total || invoiceData.total || invoiceData.totals?.grand || 0).toFixed(2);
     const customerName = invoice.customerName || invoice.customer_name || 'Unknown';
-    const dateLabel = invoice.dateText || invoiceData.monthText || invoiceData.billingDate || invoice.created_at || '';
+    const dateLabel = invoice.dateText || invoice.created_at || '';
     const moduleLabel = mapModuleName(invoice.module);
 
     return `
       <tr>
-        <td>${invoice.invoice_id || invoice.id}</td>
+        <td>${escapeHtml(invoice.invoice_id || invoice.id)}</td>
         <td>${escapeHtml(customerName)}</td>
         <td>${moduleLabel}</td>
         <td>${escapeHtml(dateLabel)}</td>
@@ -77,11 +139,26 @@ function renderTable(rows) {
     button.addEventListener('click', () => {
       const invoice = rows.find((item) => Number(item.id) === id);
       if (!invoice) return;
-      if (action === 'view') viewInvoice(invoice);
-      if (action === 'edit') editInvoice(invoice);
       if (action === 'delete') deleteInvoice(invoice);
+      if (action === 'view' || action === 'edit') {
+        fetchInvoiceDetails(id)
+          .then((fullInvoice) => {
+            if (action === 'view') viewInvoice(fullInvoice);
+            else editInvoice(fullInvoice);
+          })
+          .catch((error) => alert(error.message || 'Unable to load invoice details.'));
+      }
     });
   });
+}
+
+async function fetchInvoiceDetails(id) {
+  const response = await fetch(`/api/invoices?id=${encodeURIComponent(id)}`, { cache: 'no-store' });
+  const payload = await response.json();
+  if (!response.ok || !payload.invoice) {
+    throw new Error(payload.error || 'Unable to load invoice details.');
+  }
+  return payload.invoice;
 }
 
 function mapModuleName(module) {
@@ -166,79 +243,180 @@ async function deleteInvoice(invoice) {
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || 'Delete failed');
     alert(payload.message || 'Invoice deleted.');
-    await loadInvoices();
+    await loadInvoices(currentPage);
+    if (!invoicesCache.length && currentPage > 0) await loadInvoices(currentPage - 1);
   } catch (error) {
     alert(error.message || 'Delete failed.');
   }
 }
 
-function exportCurrentModuleCsv() {
-  const rows = buildModuleRowsFromCache();
-  if (!rows.length) {
-    alert('No invoices to export for this module.');
-    return;
-  }
+async function fetchAllInvoices(module) {
+  const invoices = [];
+  let offset = 0;
+  let total = 0;
 
-  const csv = [Object.keys(rows[0]).join(','), ...rows.map((row) => Object.values(row).map(escapeCsv).join(','))].join('\n');
-  downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8;' }), `${moduleFilter.value}-invoices.csv`);
+  do {
+    const query = new URLSearchParams({
+      module,
+      limit: '100',
+      offset: String(offset)
+    });
+    const response = await fetch(`/api/invoices?${query}`, { cache: 'no-store' });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || `Unable to load ${mapModuleName(module)} invoices.`);
+
+    const page = payload.invoices || [];
+    invoices.push(...page);
+    total = Number(payload.total || 0);
+    offset += page.length;
+    if (!page.length && offset < total) {
+      throw new Error(`Invoice export stopped early while loading ${mapModuleName(module)}.`);
+    }
+  } while (offset < total);
+
+  return invoices;
+}
+
+async function withExportProgress(label, action) {
+  setExporting(true);
+  exportStatus.textContent = label;
+  try {
+    await action();
+    exportStatus.textContent = 'Export ready.';
+  } catch (error) {
+    console.error('Invoice export failed:', error);
+    exportStatus.textContent = 'Export failed.';
+    alert(error.message || 'Invoice export failed.');
+  } finally {
+    setExporting(false);
+  }
+}
+
+function setExporting(isExporting) {
+  exportButtons.forEach((button) => {
+    button.disabled = isExporting;
+  });
+}
+
+function exportCurrentModuleCsv() {
+  withExportProgress('Preparing CSV export…', async () => {
+    const invoices = await fetchAllInvoices(moduleFilter.value);
+    const rows = buildModuleRows(invoices);
+    if (!rows.length) throw new Error('No invoices to export for this module.');
+
+    const csv = [Object.keys(rows[0]).join(','), ...rows.map((row) => Object.values(row).map(escapeCsv).join(','))].join('\n');
+    downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8;' }), `${moduleFilter.value}-invoices.csv`);
+  });
 }
 
 function exportCurrentModuleExcel() {
-  const rows = buildModuleRowsFromCache();
-  if (!rows.length) {
-    alert('No invoices to export for this module.');
-    return;
-  }
+  withExportProgress('Preparing Excel workbook…', async () => {
+    const invoices = await fetchAllInvoices(moduleFilter.value);
+    if (!invoices.length) throw new Error('No invoices to export for this module.');
+    if (!window.downloadInvoiceWorkbook) throw new Error('Excel export support could not be loaded.');
 
-  const worksheet = XLSX.utils.json_to_sheet(rows);
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'Invoices');
-  XLSX.writeFile(workbook, `${moduleFilter.value}-invoices.xlsx`);
+    window.downloadInvoiceWorkbook(invoices.map((invoice, index) => ({
+      name: buildSheetName(invoice, index),
+      rows: buildInvoiceSheetRows(invoice)
+    })));
+  });
 }
 
-function exportCurrentModulePdf() {
-  const module = moduleFilter.value;
-  if (!invoicesCache.length) {
-    alert('No invoices to export for this module.');
-    return;
-  }
-
-  const printWindow = window.open('', '_blank', 'width=900,height=700');
-  if (!printWindow) {
-    alert('Please allow pop-ups to export PDF.');
-    return;
-  }
-
-  const rows = invoicesCache.map((invoice) => {
-    const invoiceData = invoice.invoice_data || {};
-    const total = Number(invoice.total || invoiceData.total || invoiceData.totals?.grand || 0).toFixed(2);
-    const lines = buildExportRows(invoiceData, module)
-      .map((row) => `<tr><td>${escapeHtml(row.label)}</td><td>${escapeHtml(row.value)}</td></tr>`)
-      .join('');
-
-    return `
-      <section style="margin-bottom: 24px; page-break-inside: avoid; border: 1px solid #d1d5db; border-radius: 10px; padding: 16px;">
-        <h3>${escapeHtml(invoice.customerName || invoice.customer_name || 'Invoice')}</h3>
-        <p><strong>Module:</strong> ${mapModuleName(invoice.module)} | <strong>ID:</strong> ${escapeHtml(invoice.invoice_id || invoice.id)} | <strong>Total:</strong> ₹ ${total}</p>
-        <table style="width:100%; border-collapse: collapse;">
-          <thead><tr><th style="border:1px solid #d1d5db; text-align:left; padding:8px;">Field</th><th style="border:1px solid #d1d5db; text-align:left; padding:8px;">Value</th></tr></thead>
-          <tbody>${lines}</tbody>
-        </table>
-      </section>
-    `;
-  }).join('');
-
-  printWindow.document.write(`<!doctype html><html><head><title>Invoice Export</title><style>body{font-family: Arial,sans-serif; padding:24px;} table{border-collapse:collapse;} th,td{border:1px solid #d1d5db; padding:8px;}</style></head><body>${rows}</body></html>`);
-  printWindow.document.close();
-  setTimeout(() => {
-    printWindow.focus();
-    printWindow.print();
-  }, 500);
+function buildSheetName(invoice, index) {
+  const modulePrefix = String(invoice.module || 'invoice').replace(/[^a-z0-9]/gi, '').slice(0, 3).toUpperCase();
+  return `${modulePrefix}-DB${invoice.id || index + 1}`;
 }
 
-function buildModuleRowsFromCache() {
+function buildInvoiceSheetRows(invoice) {
+  const data = invoice.invoice_data || {};
+  const module = invoice.module;
+  const total = Number(invoice.total || data.total || data.totals?.grand || 0);
+  const rows = [
+    ['INVOICE SUMMARY', ''],
+    ['Invoice ID', invoice.invoice_id || ''],
+    ['Module', mapModuleName(module)],
+    ['Customer', invoice.customerName || invoice.customer_name || data.customerName || ''],
+    ['Date', invoice.dateText || data.monthText || data.dateText || data.billingDate || ''],
+    ['Grand Total', total],
+    ['Amount in Words', data.totalWords || ''],
+    []
+  ];
+
+  if (module === 'mod2') {
+    const items = data.items || [];
+    const itemTotal = items.reduce((sum, item) => sum + Number(item.price || 0), 0);
+    rows.push(
+      ['ITEM DETAILS', ''],
+      ['S.No.', 'Item', 'Quantity', 'Unit', 'Rate', 'Price'],
+      ...items.map((item, index) => [
+        item.sNo || index + 1,
+        item.name || '',
+        Number(item.quantity || 0),
+        item.unit || '',
+        Number(item.quotePrice || item.rate || 0),
+        Number(item.price || 0)
+      ]),
+      [],
+      ['Items Total', itemTotal],
+      ['Previous Dues', Number(data.previousDues || 0)],
+      ['Transportation Charge', Number(data.transportationCharge || 0)],
+      ['Grand Total', total]
+    );
+  } else {
+    const daily = data.daily || [];
+    rows.push(
+      ['DAILY AMOUNTS', ''],
+      ['Day', 'Date', 'Amount'],
+      ...daily.map((entry) => [
+        entry.day_num || '',
+        entry.date || '',
+        entry.is_empty || entry.amount == null ? '' : Number(entry.amount)
+      ]),
+      [],
+      ['Total 1 (1–15)', Number(data.totals?.t1 || 0)],
+      ['Total 2 (16–end)', Number(data.totals?.t2 || 0)],
+      ['Grand Total', total]
+    );
+  }
+
+  return rows;
+}
+
+async function exportAllModulePdfs() {
+  await withExportProgress('Loading invoices from all modules…', async () => {
+    if (typeof JSZip !== 'function' || !window.InvoiceExport) {
+      throw new Error('PDF/ZIP export support could not be loaded. Refresh and try again.');
+    }
+
+    const modules = ['mod1', 'mod2', 'mod3'];
+    const moduleInvoices = await Promise.all(modules.map((module) => fetchAllInvoices(module)));
+    const allInvoices = moduleInvoices.flat();
+    if (!allInvoices.length) throw new Error('No cloud invoices are available to export.');
+
+    const zip = new JSZip();
+    let completed = 0;
+    for (const invoice of allInvoices) {
+      exportStatus.textContent = `Rendering invoice ${completed + 1} of ${allInvoices.length}…`;
+      const pdf = await window.InvoiceExport.createPdf(invoice);
+      const moduleFolder = zip.folder(mapModuleName(invoice.module));
+      const filename = `DB-${safeFilename(invoice.id)}-${safeFilename(invoice.invoice_id || 'invoice')}-${safeFilename(invoice.customerName || invoice.customer_name || 'Customer')}.pdf`;
+      moduleFolder.file(filename, pdf);
+      completed += 1;
+    }
+
+    exportStatus.textContent = 'Building PDF ZIP…';
+    const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 5 } });
+    downloadBlob(blob, 'all-module-invoices.zip');
+  });
+}
+
+function safeFilename(value) {
+  return String(value || 'invoice').replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-').slice(0, 80) || 'invoice';
+}
+
+function buildModuleRows(invoices) {
   const module = moduleFilter.value;
-  return invoicesCache
+  return invoices
     .filter((invoice) => invoice.module === module)
     .map((invoice) => {
       const invoiceData = invoice.invoice_data || {};

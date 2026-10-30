@@ -18,6 +18,8 @@ Invoice records are saved in the browser's local storage. This means the records
 
 Use **Export CSV** regularly to keep a backup. Clearing browser data can remove locally saved invoices.
 
+The Cloud Invoice Management page also stores cloud invoices in the configured D1 database. Its invoice list loads 50 summary rows per page and fetches full invoice data only when viewing or editing a record. Cloud Excel exports create one invoice worksheet per record for the selected module; PDF export creates module-specific invoice PDFs for all three modules and packages them in one ZIP file.
+
 
 ## Cloudflare Deployment Setup
 

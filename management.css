@@ -223,6 +223,34 @@ button:focus-visible {
   overflow-x: auto;
 }
 
+.table-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 10px 2px;
+}
+
+.pagination-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.pagination-actions .btn:disabled,
+.inline-actions .btn:disabled {
+  cursor: wait;
+  opacity: 0.55;
+  transform: none;
+}
+
+.export-status {
+  flex: 1 1 100%;
+  min-height: 1.2em;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
 table {
   width: 100%;
   min-width: 760px;
@@ -392,6 +420,11 @@ tbody tr:last-child td {
 
   .field-group.inline-actions {
     justify-content: flex-start;
+  }
+
+  .table-pagination {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 

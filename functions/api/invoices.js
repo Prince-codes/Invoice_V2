@@ -19,6 +19,7 @@ export async function onRequest(context) {
         updated_at TEXT NOT NULL
       )
     `).run();
+    await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_invoices_module_created_at ON invoices (module, created_at DESC, id DESC)').run();
   } catch (error) {
     return jsonResponse({ error: 'Database initialization failed', details: error.message }, 500);
   }
@@ -33,6 +34,8 @@ export async function onRequest(context) {
     const module = url.searchParams.get('module');
     const id = url.searchParams.get('id');
     const invoiceId = url.searchParams.get('invoice_id');
+    const paginated = url.searchParams.has('limit') || url.searchParams.has('offset');
+    const summaryOnly = url.searchParams.get('summary') === '1';
 
     if (id) {
       const result = await env.DB.prepare('SELECT * FROM invoices WHERE id = ? ORDER BY created_at DESC LIMIT 1').bind(id).first();
@@ -46,15 +49,42 @@ export async function onRequest(context) {
       return jsonResponse({ invoice: serializeInvoice(result) }, 200);
     }
 
-    let query = 'SELECT * FROM invoices';
-    const params = [];
+    let whereClause = '';
+    const countParams = [];
     if (module) {
-      query += ' WHERE module = ?';
-      params.push(module);
+      whereClause = ' WHERE module = ?';
+      countParams.push(module);
     }
-    query += ' ORDER BY created_at DESC';
 
-    const rows = await env.DB.prepare(query).bind(...params).all();
+    if (paginated) {
+      const requestedLimit = Number(url.searchParams.get('limit') || 50);
+      const requestedOffset = Number(url.searchParams.get('offset') || 0);
+      if (!Number.isInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 100) {
+        return jsonResponse({ error: 'Limit must be an integer from 1 to 100.' }, 400);
+      }
+      if (!Number.isSafeInteger(requestedOffset) || requestedOffset < 0) {
+        return jsonResponse({ error: 'Offset must be a non-negative integer.' }, 400);
+      }
+
+      const countRow = await env.DB.prepare(`SELECT COUNT(*) AS total FROM invoices${whereClause}`).bind(...countParams).first();
+      const selectFields = summaryOnly
+        ? 'id, module, invoice_id, customer_name, created_by, invoice_data, created_at, updated_at'
+        : '*';
+      const rows = await env.DB.prepare(
+        `SELECT ${selectFields} FROM invoices${whereClause} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`
+      ).bind(...countParams, requestedLimit, requestedOffset).all();
+      const total = Number(countRow?.total || 0);
+      return jsonResponse({
+        invoices: (rows.results || []).map((row) => serializeInvoice(row, !summaryOnly)),
+        total,
+        limit: requestedLimit,
+        offset: requestedOffset,
+        has_more: requestedOffset + (rows.results || []).length < total
+      }, 200);
+    }
+
+    const query = `SELECT * FROM invoices${whereClause} ORDER BY created_at DESC, id DESC`;
+    const rows = await env.DB.prepare(query).bind(...countParams).all();
     return jsonResponse({ invoices: (rows.results || []).map(serializeInvoice) }, 200);
   }
 
@@ -118,7 +148,7 @@ function normalizeModule(module) {
   return ['mod1', 'mod2', 'mod3'].includes(value) ? value : null;
 }
 
-function serializeInvoice(row) {
+function serializeInvoice(row, includeInvoiceData = true) {
   let invoiceData = {};
   try {
     invoiceData = typeof row.invoice_data === 'string' ? JSON.parse(row.invoice_data || '{}') : (row.invoice_data || {});
@@ -126,7 +156,7 @@ function serializeInvoice(row) {
     invoiceData = {};
   }
 
-  return {
+  const invoice = {
     id: row.id,
     module: row.module,
     invoice_id: row.invoice_id,
@@ -134,11 +164,12 @@ function serializeInvoice(row) {
     created_by: row.created_by,
     created_at: row.created_at,
     updated_at: row.updated_at,
-    invoice_data: invoiceData,
     total: deriveTotalFromInvoiceData(invoiceData),
     customerName: invoiceData.customerName || row.customer_name,
     dateText: invoiceData.dateText || invoiceData.monthText || invoiceData.billingDate || ''
   };
+  if (includeInvoiceData) invoice.invoice_data = invoiceData;
+  return invoice;
 }
 
 function deriveTotalFromInvoiceData(invoiceData) {
