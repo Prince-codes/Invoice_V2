@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const exportCsvBtn = document.getElementById('exportCsvBtn');
 
   let editingInvoiceId = null;
+  let editingCloudInvoiceId = null;
   let saveInProgress = false;
 
   const monthNames = [
@@ -103,6 +104,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function resetEditorState() {
     editingInvoiceId = null;
+    editingCloudInvoiceId = null;
     saveInProgress = false;
     setEditorButtonMode(false);
   }
@@ -118,6 +120,7 @@ document.addEventListener('DOMContentLoaded', () => {
     tablesContainer.appendChild(table1);
     tablesContainer.appendChild(table2);
     editingInvoiceId = null;
+    editingCloudInvoiceId = null;
     setEditorButtonMode(false);
     modal.classList.add('show');
     recalcTotals();
@@ -211,8 +214,16 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function getNextInvoiceId() {
-    const current = Number(localStorage.getItem('nextInvoiceId') || '1');
-    localStorage.setItem('nextInvoiceId', String(current + 1));
+    const module = 'mod1';
+    const counterKey = `nextInvoiceId_${module}`;
+    const stored = Number(localStorage.getItem(counterKey));
+    const invoices = loadInvoicesFromStorage();
+    const highestExisting = invoices.reduce((highest, invoice) => {
+      if (invoice.module ? invoice.module !== module : !Array.isArray(invoice.daily)) return highest;
+      return Math.max(highest, Number(invoice.invoiceId) || 0);
+    }, 0);
+    const current = Math.max(100, Number.isSafeInteger(stored) ? stored : 0, highestExisting + 1);
+    localStorage.setItem(counterKey, String(current + 1));
     return current;
   }
 
@@ -233,7 +244,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function updateCsvCache() {
-    const invoices = loadInvoicesFromStorage();
+    const invoices = loadInvoicesFromStorage().filter(inv => inv.module === 'mod1' || (!inv.module && Array.isArray(inv.daily)));
     const header = ['invoiceId', 'customerName', 'monthYearISO', 'monthText', 'total', 'totalWords', 'createdAt', 'createdBy', 'daily_json'];
     const rows = invoices.map(inv => {
       const dailyJson = JSON.stringify(Array.isArray(inv.daily) ? inv.daily : []).replace(/"/g, '""');
@@ -439,7 +450,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (viewPreviousBtn) {
     viewPreviousBtn.addEventListener('click', () => {
-      let invoices = loadInvoicesFromStorage();
+      let invoices = loadInvoicesFromStorage().filter(inv => inv.module === 'mod1' || (!inv.module && Array.isArray(inv.daily)));
       if (!invoices || invoices.length === 0) {
         alert('No previous invoices found. Save some invoices first.');
         return;
@@ -517,6 +528,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function openInvoiceInEditor(inv) {
     if (!modal || !tablesContainer || !monthSelect || !yearSelect) return;
     editingInvoiceId = inv.invoiceId;
+    editingCloudInvoiceId = null;
     customerInput.value = inv.customerName || '';
 
     try {
@@ -613,6 +625,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     return {
+      module: 'mod1',
       invoiceId: editingInvoiceId || getNextInvoiceId(),
       customerName: cust,
       monthYearISO: `${y}-${String(m).padStart(2, '0')}-01`,
@@ -642,10 +655,29 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
+      if (editingCloudInvoiceId !== null) {
+        window.InvoiceCloudSync.updateInvoiceInCloud(invoiceObj, 'mod1', editingCloudInvoiceId)
+          .then((result) => {
+            if (!result.ok) throw new Error(result.error || 'Cloud invoice update failed.');
+            window.location.href = '../Management/management.html';
+          })
+          .catch((error) => {
+            console.error('Unable to update cloud invoice:', error);
+            alert(error.message || 'Unable to update cloud invoice.');
+          })
+          .finally(() => {
+            saveInProgress = false;
+          });
+        return;
+      }
+
       const arr = loadInvoicesFromStorage();
-      const idx = arr.findIndex(i => String(i.invoiceId) === String(editingInvoiceId));
+      const idx = arr.findIndex(i => String(i.invoiceId) === String(editingInvoiceId) && (i.module === 'mod1' || !i.module));
       if (idx >= 0) arr[idx] = { ...invoiceObj, invoiceId: editingInvoiceId };
       localStorage.setItem('invoices', JSON.stringify(arr));
+      if (window.InvoiceCloudSync) {
+        window.InvoiceCloudSync.updateInvoiceByInvoiceNumber(invoiceObj, 'mod1');
+      }
       updateCsvCache();
       editingInvoiceId = null;
       modal.classList.remove('show');
@@ -669,5 +701,25 @@ document.addEventListener('DOMContentLoaded', () => {
     saveInProgress = false;
   }
 
+  function loadCloudInvoiceForEdit() {
+    const raw = sessionStorage.getItem('cloudInvoiceEdit');
+    if (!raw) return;
+    try {
+      const payload = JSON.parse(raw);
+      if (payload.module !== 'mod1') return;
+      sessionStorage.removeItem('cloudInvoiceEdit');
+      if (!Number.isSafeInteger(Number(payload.databaseId)) || Number(payload.databaseId) < 1) {
+        throw new Error('The cloud invoice record ID is invalid.');
+      }
+      openInvoiceInEditor(payload.invoice || {});
+      editingCloudInvoiceId = Number(payload.databaseId);
+    } catch (error) {
+      sessionStorage.removeItem('cloudInvoiceEdit');
+      console.error('Unable to open cloud invoice for editing:', error);
+      alert(error.message || 'Unable to open cloud invoice for editing.');
+    }
+  }
+
   if (!localStorage.getItem('invoices_csv')) updateCsvCache();
+  loadCloudInvoiceForEdit();
 });

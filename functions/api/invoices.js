@@ -20,6 +20,7 @@ export async function onRequest(context) {
       )
     `).run();
     await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_invoices_module_created_at ON invoices (module, created_at DESC, id DESC)').run();
+    await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_invoices_module_invoice_id ON invoices (module, invoice_id, created_at DESC, id DESC)').run();
   } catch (error) {
     return jsonResponse({ error: 'Database initialization failed', details: error.message }, 500);
   }
@@ -112,10 +113,25 @@ export async function onRequest(context) {
 
   if (method === 'PUT') {
     const payload = await readJson(request);
-    const id = payload.id;
-    if (!id) return jsonResponse({ error: 'Invoice id is required for updates.' }, 400);
+    const module = normalizeModule(payload.module);
+    if (!module) return jsonResponse({ error: 'A valid module is required for updates.' }, 400);
+    let existing;
+    if (payload.id) {
+      existing = await env.DB.prepare('SELECT id FROM invoices WHERE id = ? AND module = ?')
+        .bind(payload.id, module)
+        .first();
+    } else if (payload.lookupByInvoiceNumber && payload.invoice_id) {
+      existing = await env.DB.prepare(`
+        SELECT id FROM invoices
+        WHERE module = ? AND invoice_id = ?
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+      `).bind(module, String(payload.invoice_id)).first();
+    } else {
+      return jsonResponse({ error: 'Invoice record id or module invoice number is required for updates.' }, 400);
+    }
+    if (!existing) return jsonResponse({ error: 'Invoice not found.' }, 404);
 
-    const module = normalizeModule(payload.module) || 'mod1';
     const customerName = payload.customer_name || payload.customerName || payload.invoice_data?.customerName || payload.invoice_data?.customer_name || 'Customer';
     const invoiceId = String(payload.invoice_id || payload.invoiceId || `cloud-${Date.now()}`);
     const invoiceData = JSON.stringify(payload.invoice_data || payload.data || payload || {});
@@ -125,9 +141,9 @@ export async function onRequest(context) {
       UPDATE invoices
       SET module = ?, invoice_id = ?, customer_name = ?, created_by = ?, invoice_data = ?, updated_at = ?
       WHERE id = ?
-    `).bind(module, invoiceId, customerName, data.username, invoiceData, now, id).run();
+    `).bind(module, invoiceId, customerName, data.username, invoiceData, now, existing.id).run();
 
-    const updated = await env.DB.prepare('SELECT * FROM invoices WHERE id = ?').bind(id).first();
+    const updated = await env.DB.prepare('SELECT * FROM invoices WHERE id = ?').bind(existing.id).first();
     return jsonResponse({ message: 'Invoice updated.', invoice: serializeInvoice(updated) }, 200);
   }
 

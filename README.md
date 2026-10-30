@@ -1,79 +1,118 @@
-# Invoice Generator
+# Invoice V2
 
-This project is a simple invoice-generation website created especially for My Friend business. It helps the business owner prepare, save, review, export, and print invoices from a browser.
+Invoice V2 is a browser-based invoice application for Friend Shop. It provides three separate invoice workflows, local invoice history, cloud invoice management, and print and spreadsheet exports.
 
-## What It Does
+## What the application is for
 
-The application provides two invoice options:
+Use the application to create customer invoices, keep a record of saved bills, print invoices, and export invoice data for reporting or safekeeping.
 
-- **Monthly Bill**: enter daily amounts for a selected customer, month, and year.
-- **Date Bill**: enter products, quantities, quote prices, and calculated prices for one billing date.
+The application includes:
 
-Both options support saving invoice records, viewing previous invoices, and printing completed invoices. The layout works on desktop and mobile screens.
-  
+- **Mod 1 — New Monthly Bill:** Record daily amounts for a customer across a selected month.
+- **Mod 2 — Daily Bill:** Create a dated invoice with products, quantities, units, rates, previous dues, and optional transportation charges.
+- **Mod 3 — Old Monthly Bill:** Use the existing monthly invoice workflow and its own invoice layout.
+- **Cloud Invoice Management:** View, filter by module, inspect, edit, delete, and export invoices stored in the Cloudflare D1 database.
 
-## Invoice Data
+The three invoice modules remain separate so each can retain its own workflow and invoice format.
 
-Invoice records are saved in the browser's local storage. This means the records belong to the browser and device being used. They do not automatically appear on another device or browser.
+## Getting started
 
-Use **Export CSV** regularly to keep a backup. Clearing browser data can remove locally saved invoices.
+Open the application entry page and sign in. From the selection page, choose a billing module or open Cloud Invoice Management.
 
-The Cloud Invoice Management page also stores cloud invoices in the configured D1 database. Its invoice list loads 50 summary rows per page and fetches full invoice data only when viewing or editing a record. Cloud Excel exports create one invoice worksheet per record for the selected module; PDF export creates module-specific invoice PDFs for all three modules and packages them in one ZIP file.
+For local development with Cloudflare Pages, see [Local development](#local-development). The login requires server-side environment variables; the application does not provide a default password.
 
+## Invoice data and numbering
 
-## Cloudflare Deployment Setup
+Each module saves invoices in the browser's `localStorage`. New invoices are also sent to the configured D1 database for Cloud Invoice Management. If cloud sync fails, the local invoice remains saved and the application reports the sync failure.
 
-This project uses **Cloudflare Pages**, not a standalone Cloudflare Worker. The frontend is static, Pages Functions are in `functions/api`, and the D1 database binding is named `DB`.
+Browser history belongs to that browser and device. Existing local invoices are not automatically migrated to D1, and clearing browser data can remove the local copy. Cloud Invoice Management reads D1 records and requires a valid login.
 
-The `wrangler.toml` file configures Pages Functions and D1. The dashboard's drag-and-drop uploader does not deploy projects using this configuration file; do not remove the file just to get past that uploader message.
+Each module has its own invoice-number counter that starts at 100 in a browser and advances beyond that module's existing local invoice numbers. Since these counters are browser-local, creating invoices for the same module from multiple devices can produce duplicate invoice numbers. The database record ID is used to identify and update a particular cloud record.
 
-### Login Security
+## Exports and backups
 
-The login is verified by Pages Functions. It no longer uses the browser's editable `localStorage` as a credential store. Protected pages and invoice API requests require an eight-hour, signed, HTTP-only session cookie.
+- Cloud Invoice Management can export the selected module's records as CSV or as an Excel workbook with one worksheet per invoice.
+- Invoice module pages provide Excel exports of their local history.
+- Mod 2 also supports saving an individual invoice as an image.
+- Printed invoices use the selected module's invoice layout.
 
-Before deploying, add these values in **Cloudflare Pages → Settings → Variables and Secrets** for every environment you use (Production and Preview):
+CSV and Excel files are convenient business exports, but are not complete D1 backups. To make a manual database backup, run Wrangler from the project root and save the dump outside the repository:
 
-- `LOGIN_USERNAME`: the login username.
-- `LOGIN_PASSWORD`: a unique password with at least 8 characters. Store it as a secret.
-- `SESSION_SECRET`: a randomly generated secret with at least 32 characters. Store it as a secret; for example, generate one with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
+```bash
+npx wrangler d1 export invoice-v2-db --remote --output=../invoice-v2.backup.sql
+```
 
-Do not use the old browser-stored default password. There is no fallback credential: login remains unavailable until all three server-side values are configured. After adding or changing secrets, redeploy the Pages project.
+Test recovery against a separate, non-production D1 database before relying on a backup:
 
-For local development, put the same variable names in an untracked `.dev.vars` file in the project root and never commit that file. Configure a Cloudflare rate-limiting rule for `POST /api/auth/login` as an additional defense against password guessing.
+```bash
+npx wrangler d1 execute <test-database-name> --remote --file=../invoice-v2.backup.sql
+```
 
-### Recommended: Git-connected Pages project
+After restoring, verify invoice counts and module histories. Keep backup files in restricted storage and never commit them. Configure a recurring backup process and periodically test recovery; the application does not automate either.
 
-1. In Cloudflare, select **Workers & Pages → Create application → Pages → Connect to Git**. Do not select Workers or the drag-and-drop uploader.
-2. Connect this GitHub repository and select its production branch.
-3. Use the repository root as the root directory. Leave the build command blank and set the build output directory to `.`.
-4. Create a D1 database and bind it to Pages Functions with the binding name `DB`.
-5. Replace the placeholder `database_id` in `wrangler.toml` with the actual D1 database ID before deploying with the Wrangler configuration file. Alternatively, download the existing Pages project configuration with `npx wrangler pages download config` and use that generated configuration.
-6. Deploy and verify `/api/invoices` and `/management.html`.
+## Cloudflare Pages deployment
 
-The project should be created as a **Pages project** with Git integration. Cloudflare Pages Git integration automatically deploys pushes to the production branch. If the project was created as a Direct Upload project instead, it cannot later be converted to Git integration; create a new Pages project with Git integration.
+This project is a **Cloudflare Pages** application, not a standalone Worker. The static site is served from the repository root, Pages Functions are in `functions/`, and the D1 database binding is named `DB`.
 
-### Local Development Command
+### Configure the project
 
-For Pages local development, use:
+1. In Cloudflare, create a **Pages** project and connect this GitHub repository. Select the production branch.
+2. Set the project root to the repository root, leave the build command blank, and use `.` as the build output directory.
+3. Create or select the D1 database. Configure the Pages Functions binding with the name `DB`.
+4. Verify that `database_id` in [wrangler.toml](./wrangler.toml) refers to the intended database when using Wrangler configuration.
+5. Add the following values in **Cloudflare Pages → Settings → Variables and Secrets** for each environment you deploy (Production and Preview):
+   - `LOGIN_USERNAME`: the account username.
+   - `LOGIN_PASSWORD`: a unique password with at least 8 characters; store it as a secret.
+   - `SESSION_SECRET`: a randomly generated secret with at least 32 characters; store it as a secret.
+6. Redeploy after changing environment variables or secrets.
+7. Verify login, module navigation, `/api/invoices`, and `/Management/management.html`.
+
+For example, generate a session secret locally with:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+Authentication is handled by Pages Functions. Protected pages and invoice API requests use a signed, HTTP-only session cookie that expires after eight hours. There is no default credential; login is unavailable until the required server-side values are configured. Never put secrets in frontend files or commit them to the repository.
+
+For additional protection, configure a Cloudflare rate-limiting rule for `POST /api/auth/login`.
+
+Git-connected Pages projects deploy pushes to their configured production branch. A project created as a Direct Upload project cannot later be converted to Git integration; create a new Pages project if Git-connected deployment is required. Do not remove `wrangler.toml` to work around a dashboard uploader message.
+
+## Local development
+
+Use Wrangler's Pages development server from the repository root:
 
 ```bash
 npx wrangler pages dev .
 ```
 
-For a Pages Direct Upload project, deploy with the Pages-specific command (not `wrangler deploy`):
+Create an untracked `.dev.vars` file in the project root containing the same three variable names used by Pages:
 
-```bash
-npx wrangler pages deploy . --project-name invoice-v2
+```dotenv
+LOGIN_USERNAME=your-local-username
+LOGIN_PASSWORD=your-local-password
+SESSION_SECRET=replace-with-a-random-secret-of-at-least-32-characters
 ```
 
-The direct-upload command is not the recommended Git-connected deployment workflow for this repository.
+Do not use production credentials in a shared development environment. The `.dev.vars` file is ignored by Git.
 
-### Important Notes
+## Project layout
 
-- Keep all database credentials and secrets in Cloudflare environment settings, not in frontend JavaScript.
-- The project continues to keep browser-stored local invoice data as-is and uses cloud storage only for the new invoice-management workflow.
-- Existing invoice layouts and modules should remain functional after deployment.
+```text
+Assets/                  Shared logo, stamp, and Excel export utility
+functions/               Pages Functions for authentication and invoice API
+Management/              Cloud Invoice Management page, styles, and scripts
+Mod 1/                   New monthly invoice workflow
+Mod 2/                   Daily invoice workflow
+Mod 3/                   Legacy monthly invoice workflow
+Selection/               Module selection page
+index.html               Login and application entry page
+auth-client.js           Browser session helpers
+cloud-sync.js            Invoice synchronization with the cloud API
+wrangler.toml            Cloudflare Pages and D1 configuration
+```
 
-## Owner
+## Ownership
 
 Copyright (c) CARNAGE SENTINELS.

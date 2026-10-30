@@ -12,8 +12,8 @@
 <body>
   <main class="management-shell">
     <header class="topbar">
-      <a class="management-brand" href="Selection/selection.html" aria-label="Shankar Vegetable Shop home">
-        <img src="Assets/logo.png" alt="Shankar Vegetable Shop logo" />
+      <a class="management-brand" href="../Selection/selection.html" aria-label="Shankar Vegetable Shop home">
+        <img src="../Assets/logo.png" alt="Shankar Vegetable Shop logo" />
         <span class="brand-info">
           <span class="brand-name">Shankar Vegetable Shop</span>
           <span class="brand-address">Gamharia market complex - 832108</span>
@@ -45,7 +45,6 @@
         <button id="loadInvoicesBtn" class="btn primary" type="button">Load Invoices</button>
         <button id="exportCsvBtn" class="btn" type="button">Export CSV</button>
         <button id="exportExcelBtn" class="btn" type="button">Export Excel</button>
-        <button id="exportPdfBtn" class="btn" type="button">Export PDFs (ZIP)</button>
       </div>
       <p id="exportStatus" class="export-status" aria-live="polite"></p>
     </section>
@@ -90,12 +89,8 @@
     </div>
   </div>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <script src="Assets/excel-export.js"></script>
-  <script src="invoice-export.js"></script>
-  <script src="auth-client.js"></script>
+  <script src="../Assets/excel-export.js"></script>
+  <script src="../auth-client.js"></script>
   <script src="management.js"></script>
 </body>
 </html>

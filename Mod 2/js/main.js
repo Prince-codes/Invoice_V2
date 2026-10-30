@@ -20,6 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const previousBillsModal = document.getElementById('previousBillsModal');
   const previousBillsTableBody = document.querySelector('#previousBillsTable tbody');
   let editingInvoiceId = null;
+  let editingCloudInvoiceId = null;
   let saveInProgress = false;
 
   window.InvoiceAuth.initializeUserDisplay('userDisplay').catch((error) => {
@@ -56,12 +57,14 @@ document.addEventListener('DOMContentLoaded', () => {
     transportationChargeInput.value = '';
     transportationChargeField.classList.add('is-hidden');
     editingInvoiceId = null;
+    editingCloudInvoiceId = null;
     saveInProgress = false;
     setEditorButtonMode(false);
   }
 
   function openNewEditor() {
     editingInvoiceId = null;
+    editingCloudInvoiceId = null;
     editorCustomerInput.value = customerInput.value.trim();
     transportationChargedInput.checked = false;
     transportationChargeInput.value = '';
@@ -186,9 +189,10 @@ document.addEventListener('DOMContentLoaded', () => {
       alert('Enter customer name first.');
       return null;
     }
-    const invoiceNumber = getNextInvoiceId();
+    const invoiceNumber = editingInvoiceId || getNextInvoiceId();
 
     return {
+      module: 'mod2',
       invoiceId: editingInvoiceId || invoiceNumber,
       invoiceNumber,
       customerName,
@@ -221,7 +225,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const invoices = loadInvoices();
     if (updateExisting) {
       if (!window.confirm('This will overwrite the existing invoice. Continue?')) { saveInProgress = false; return; }
-      const index = invoices.findIndex(item => String(item.invoiceId) === String(editingInvoiceId));
+      if (editingCloudInvoiceId !== null) {
+        window.InvoiceCloudSync.updateInvoiceInCloud(invoice, 'mod2', editingCloudInvoiceId)
+          .then((result) => {
+            if (!result.ok) throw new Error(result.error || 'Cloud invoice update failed.');
+            window.location.href = '../Management/management.html';
+          })
+          .catch((error) => {
+            console.error('Unable to update cloud invoice:', error);
+            alert(error.message || 'Unable to update cloud invoice.');
+          })
+          .finally(() => {
+            saveInProgress = false;
+          });
+        return;
+      }
+      const index = invoices.findIndex(item => String(item.invoiceId) === String(editingInvoiceId) && (item.module === 'mod2' || !item.module));
       if (index >= 0) invoices[index] = invoice;
     } else {
       invoices.push(invoice);
@@ -230,7 +249,7 @@ document.addEventListener('DOMContentLoaded', () => {
     localStorage.setItem('invoices', JSON.stringify(invoices));
     if (window.InvoiceCloudSync) {
       if (updateExisting && editingInvoiceId) {
-        window.InvoiceCloudSync.updateInvoiceInCloud(invoice, 'mod2', editingInvoiceId);
+        window.InvoiceCloudSync.updateInvoiceByInvoiceNumber(invoice, 'mod2');
       } else {
         window.InvoiceCloudSync.saveInvoiceToCloud(invoice, 'mod2');
       }
@@ -271,7 +290,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function showPreviousBills() {
-    const invoices = loadInvoices().sort((a, b) => Number(a.invoiceId) - Number(b.invoiceId));
+    const invoices = loadInvoices()
+      .filter(invoice => invoice.module === 'mod2' || (!invoice.module && Array.isArray(invoice.items)))
+      .sort((a, b) => Number(a.invoiceId) - Number(b.invoiceId));
     if (!invoices.length) return alert('No previous invoices found. Save some invoices first.');
     previousBillsTableBody.innerHTML = '';
     invoices.forEach(invoice => {
@@ -289,6 +310,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function openInvoiceInEditor(invoice) {
     editingInvoiceId = invoice.invoiceId;
+    editingCloudInvoiceId = null;
     customerInput.value = invoice.customerName || '';
     editorCustomerInput.value = invoice.customerName || '';
     billingDateInput.value = invoice.billingDate || (invoice.monthYearISO ? invoice.monthYearISO.slice(0, 10) : '');
@@ -403,9 +425,33 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function getNextInvoiceId() {
-    const current = Number(localStorage.getItem('nextInvoiceId') || '1');
-    localStorage.setItem('nextInvoiceId', String(current + 1));
+    const module = 'mod2';
+    const counterKey = `nextInvoiceId_${module}`;
+    const stored = Number(localStorage.getItem(counterKey));
+    const invoices = loadInvoices().filter(invoice => invoice.module === module || (!invoice.module && Array.isArray(invoice.items)));
+    const highestExisting = invoices.reduce((highest, invoice) => Math.max(highest, Number(invoice.invoiceId) || 0), 0);
+    const current = Math.max(100, Number.isSafeInteger(stored) ? stored : 0, highestExisting + 1);
+    localStorage.setItem(counterKey, String(current + 1));
     return current;
+  }
+
+  function loadCloudInvoiceForEdit() {
+    const raw = sessionStorage.getItem('cloudInvoiceEdit');
+    if (!raw) return;
+    try {
+      const payload = JSON.parse(raw);
+      if (payload.module !== 'mod2') return;
+      sessionStorage.removeItem('cloudInvoiceEdit');
+      if (!Number.isSafeInteger(Number(payload.databaseId)) || Number(payload.databaseId) < 1) {
+        throw new Error('The cloud invoice record ID is invalid.');
+      }
+      openInvoiceInEditor(payload.invoice || {});
+      editingCloudInvoiceId = Number(payload.databaseId);
+    } catch (error) {
+      sessionStorage.removeItem('cloudInvoiceEdit');
+      console.error('Unable to open cloud invoice for editing:', error);
+      alert(error.message || 'Unable to open cloud invoice for editing.');
+    }
   }
 
   function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char])); }
@@ -413,4 +459,5 @@ document.addEventListener('DOMContentLoaded', () => {
   function numberToWords(num) { if (num === 0) return 'Zero Only'; const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen']; const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety']; const convert = n => n < 20 ? ones[n] : n < 100 ? tens[Math.floor(n / 10)] + (n % 10 ? ` ${ones[n % 10]}` : '') : n < 1000 ? `${ones[Math.floor(n / 100)]} Hundred${n % 100 ? ` and ${convert(n % 100)}` : ''}` : n < 100000 ? `${convert(Math.floor(n / 1000))} Thousand${n % 1000 ? ` ${convert(n % 1000)}` : ''}` : `${convert(Math.floor(n / 100000))} Lakh${n % 100000 ? ` ${convert(n % 100000)}` : ''}`; return `${convert(num)} Only`; }
 
   if (!localStorage.getItem('invoices_csv')) updateCsvCache();
+  loadCloudInvoiceForEdit();
 });

@@ -37,7 +37,27 @@
       return { ok: true, data: result };
     } catch (error) {
       console.warn('Cloud save skipped:', error.message || error);
+      window.alert(`Invoice was saved on this device, but cloud sync failed: ${error.message || 'Check your connection and try again.'}`);
       return { ok: false, error: error.message || 'Cloud save failed.' };
+    }
+  }
+
+  async function updateInvoiceByInvoiceNumber(invoice, module) {
+    const payload = buildCloudPayload(invoice, module);
+    payload.lookupByInvoiceNumber = true;
+    try {
+      const response = await fetch(API_PATH, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'Cloud update failed.');
+      return { ok: true, data: result };
+    } catch (error) {
+      console.warn('Cloud update skipped:', error.message || error);
+      window.alert(`Invoice was updated on this device, but cloud sync failed: ${error.message || 'Check your connection and try again.'}`);
+      return { ok: false, error: error.message || 'Cloud update failed.' };
     }
   }
 
@@ -81,6 +101,7 @@
 
   window.InvoiceCloudSync = {
     saveInvoiceToCloud,
+    updateInvoiceByInvoiceNumber,
     updateInvoiceInCloud,
     deleteInvoiceFromCloud,
     getModuleKey

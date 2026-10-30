@@ -11,8 +11,7 @@ const paginationStatus = document.getElementById('paginationStatus');
 const exportStatus = document.getElementById('exportStatus');
 const exportButtons = [
   document.getElementById('exportCsvBtn'),
-  document.getElementById('exportExcelBtn'),
-  document.getElementById('exportPdfBtn')
+  document.getElementById('exportExcelBtn')
 ];
 
 const PAGE_SIZE = 50;
@@ -32,7 +31,7 @@ window.InvoiceAuth.initializeUserDisplay('userDisplay')
   });
 
 backBtn.addEventListener('click', () => {
-  window.location.href = 'Selection/selection.html';
+  window.location.href = '../Selection/selection.html';
 });
 
 window.InvoiceAuth.bindLogout('logoutBtn');
@@ -45,7 +44,6 @@ nextPageButton.addEventListener('click', () => loadInvoices(currentPage + 1));
 moduleFilter.addEventListener('change', () => loadInvoices(0));
 document.getElementById('exportCsvBtn').addEventListener('click', exportCurrentModuleCsv);
 document.getElementById('exportExcelBtn').addEventListener('click', exportCurrentModuleExcel);
-document.getElementById('exportPdfBtn').addEventListener('click', exportAllModulePdfs);
 
 async function loadInvoices(page = currentPage) {
   if (page < 0) return;
@@ -216,14 +214,18 @@ function closeDetailModal() {
 function editInvoice(invoice) {
   const payload = {
     module: invoice.module,
-    invoice: invoice.invoice_data || {}
+    databaseId: invoice.id,
+    invoice: {
+      ...(invoice.invoice_data || {}),
+      invoiceId: invoice.invoice_data?.invoiceId || invoice.invoice_id
+    }
   };
   sessionStorage.setItem('cloudInvoiceEdit', JSON.stringify(payload));
 
   const redirectMap = {
-    mod1: 'Mod 1/main.html',
-    mod2: 'Mod 2/main.html',
-    mod3: 'Mod 3/main.html'
+    mod1: '../Mod 1/main.html',
+    mod2: '../Mod 2/main.html',
+    mod3: '../Mod 3/main.html'
   };
 
   window.location.href = redirectMap[invoice.module] || 'Selection/selection.html';
@@ -380,38 +382,6 @@ function buildInvoiceSheetRows(invoice) {
   }
 
   return rows;
-}
-
-async function exportAllModulePdfs() {
-  await withExportProgress('Loading invoices from all modules…', async () => {
-    if (typeof JSZip !== 'function' || !window.InvoiceExport) {
-      throw new Error('PDF/ZIP export support could not be loaded. Refresh and try again.');
-    }
-
-    const modules = ['mod1', 'mod2', 'mod3'];
-    const moduleInvoices = await Promise.all(modules.map((module) => fetchAllInvoices(module)));
-    const allInvoices = moduleInvoices.flat();
-    if (!allInvoices.length) throw new Error('No cloud invoices are available to export.');
-
-    const zip = new JSZip();
-    let completed = 0;
-    for (const invoice of allInvoices) {
-      exportStatus.textContent = `Rendering invoice ${completed + 1} of ${allInvoices.length}…`;
-      const pdf = await window.InvoiceExport.createPdf(invoice);
-      const moduleFolder = zip.folder(mapModuleName(invoice.module));
-      const filename = `DB-${safeFilename(invoice.id)}-${safeFilename(invoice.invoice_id || 'invoice')}-${safeFilename(invoice.customerName || invoice.customer_name || 'Customer')}.pdf`;
-      moduleFolder.file(filename, pdf);
-      completed += 1;
-    }
-
-    exportStatus.textContent = 'Building PDF ZIP…';
-    const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 5 } });
-    downloadBlob(blob, 'all-module-invoices.zip');
-  });
-}
-
-function safeFilename(value) {
-  return String(value || 'invoice').replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-').slice(0, 80) || 'invoice';
 }
 
 function buildModuleRows(invoices) {
