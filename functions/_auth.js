@@ -10,7 +10,7 @@ export function getAuthConfiguration(env) {
     typeof username !== 'string' ||
     !username ||
     typeof password !== 'string' ||
-    password.length < 12 ||
+    password.length < 8 ||
     typeof secret !== 'string' ||
     secret.length < 32
   ) {

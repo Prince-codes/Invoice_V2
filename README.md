@@ -32,7 +32,7 @@ The login is verified by Pages Functions. It no longer uses the browser's editab
 Before deploying, add these values in **Cloudflare Pages → Settings → Variables and Secrets** for every environment you use (Production and Preview):
 
 - `LOGIN_USERNAME`: the login username.
-- `LOGIN_PASSWORD`: a unique password with at least 12 characters. Store it as a secret.
+- `LOGIN_PASSWORD`: a unique password with at least 8 characters. Store it as a secret.
 - `SESSION_SECRET`: a randomly generated secret with at least 32 characters. Store it as a secret; for example, generate one with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
 
 Do not use the old browser-stored default password. There is no fallback credential: login remains unavailable until all three server-side values are configured. After adding or changing secrets, redeploy the Pages project.
