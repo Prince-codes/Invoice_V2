@@ -217,20 +217,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  function getNextInvoiceId() {
-    const module = 'mod1';
-    const counterKey = `nextInvoiceId_${module}`;
-    const stored = Number(localStorage.getItem(counterKey));
-    const invoices = loadInvoicesFromStorage();
-    const highestExisting = invoices.reduce((highest, invoice) => {
-      if (invoice.module ? invoice.module !== module : !Array.isArray(invoice.daily)) return highest;
-      return Math.max(highest, Number(invoice.invoiceId) || 0);
-    }, 0);
-    const current = Math.max(100, Number.isSafeInteger(stored) ? stored : 0, highestExisting + 1);
-    localStorage.setItem(counterKey, String(current + 1));
-    return current;
-  }
-
   function saveInvoiceToStorage(inv) {
     const raw = localStorage.getItem('invoices');
     let arr = [];
@@ -475,9 +461,18 @@ document.addEventListener('DOMContentLoaded', () => {
       let invoices = source === 'cloud'
         ? await window.InvoiceCloudSync.fetchInvoicesFromCloud('mod1')
         : loadInvoicesFromStorage().filter(inv => inv.module === 'mod1' || (!inv.module && Array.isArray(inv.daily)));
+      let localRefreshWarning = '';
+      if (source === 'cloud') {
+        try {
+          window.InvoiceCloudSync.cacheCloudInvoicesLocally(invoices, 'mod1');
+        } catch (error) {
+          console.error('Cloud invoices loaded but local history could not be refreshed:', error);
+          localRefreshWarning = ' Local copy could not be refreshed on this device.';
+        }
+      }
       invoices = invoices.sort((a, b) => String(a.invoiceId).localeCompare(String(b.invoiceId), undefined, { numeric: true }));
       historySourceStatus.textContent = source === 'cloud'
-        ? `Showing ${invoices.length} cloud invoice${invoices.length === 1 ? '' : 's'}.`
+        ? `Showing ${invoices.length} cloud invoice${invoices.length === 1 ? '' : 's'}.${localRefreshWarning}`
         : 'Showing invoices saved on this device.';
 
       if (!invoices.length) {
@@ -616,7 +611,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  function buildInvoiceData() {
+  function buildInvoiceData(invoiceNumber = null) {
     const cust = customerInput.value.trim();
     if (!cust) {
       alert('Enter customer name first.');
@@ -661,7 +656,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     return {
       module: 'mod1',
-      invoiceId: editingInvoiceId || getNextInvoiceId(),
+      invoiceId: editingInvoiceId || invoiceNumber,
       customerName: cust,
       monthYearISO: `${y}-${String(m).padStart(2, '0')}-01`,
       monthText: `${monthNames[m - 1]} ${y}`,
@@ -673,7 +668,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
   }
 
-  function handleSave({ asDraft = false, updateExisting = false } = {}) {
+  async function handleSave({ asDraft = false, updateExisting = false } = {}) {
     if (saveInProgress) return;
     saveInProgress = true;
 
@@ -681,6 +676,16 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!invoiceObj) {
       saveInProgress = false;
       return;
+    }
+
+    if (!updateExisting && !editingInvoiceId) {
+      try {
+        invoiceObj.invoiceId = await window.InvoiceCloudSync.allocateInvoiceId();
+      } catch (error) {
+        saveInProgress = false;
+        alert(error.message || 'Could not allocate a shared invoice number. Check your connection and try again.');
+        return;
+      }
     }
 
     if (updateExisting) {

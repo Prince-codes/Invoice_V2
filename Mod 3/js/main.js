@@ -217,18 +217,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ID helpers using localStorage
-  function getNextInvoiceId() {
-    const module = 'mod3';
-    const counterKey = `nextInvoiceId_${module}`;
-    const stored = Number(localStorage.getItem(counterKey));
-    const invoices = loadInvoicesFromStorage().filter(invoice => invoice.module === module || (!invoice.module && Array.isArray(invoice.daily)));
-    const highestExisting = invoices.reduce((highest, invoice) => Math.max(highest, Number(invoice.invoiceId) || 0), 0);
-    const current = Math.max(100, Number.isSafeInteger(stored) ? stored : 0, highestExisting + 1);
-    localStorage.setItem(counterKey, String(current + 1));
-    return current;
-  }
-
   function saveInvoiceToStorage(inv) {
     const raw = localStorage.getItem('invoices');
     let arr = [];
@@ -573,9 +561,18 @@ document.addEventListener('DOMContentLoaded', () => {
       let invoices = source === 'cloud'
         ? await window.InvoiceCloudSync.fetchInvoicesFromCloud('mod3')
         : loadInvoicesFromStorage().filter(inv => inv.module === 'mod3' || (!inv.module && Array.isArray(inv.daily)));
+      let localRefreshWarning = '';
+      if (source === 'cloud') {
+        try {
+          window.InvoiceCloudSync.cacheCloudInvoicesLocally(invoices, 'mod3');
+        } catch (error) {
+          console.error('Cloud invoices loaded but local history could not be refreshed:', error);
+          localRefreshWarning = ' Local copy could not be refreshed on this device.';
+        }
+      }
       invoices.sort((a, b) => Number(a.invoiceId) - Number(b.invoiceId));
       historySourceStatus.textContent = source === 'cloud'
-        ? `Showing ${invoices.length} cloud invoice${invoices.length === 1 ? '' : 's'}.`
+        ? `Showing ${invoices.length} cloud invoice${invoices.length === 1 ? '' : 's'}.${localRefreshWarning}`
         : 'Showing invoices saved on this device.';
 
       if (!invoices.length) {
@@ -685,10 +682,6 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         });
         localStorage.setItem('invoices', JSON.stringify(existing));
-        const importedMaxId = parsed.reduce((highest, invoice) => Math.max(highest, Number(invoice.invoiceId) || 0), 0);
-        const counterKey = 'nextInvoiceId_mod3';
-        const nextId = Math.max(100, Number(localStorage.getItem(counterKey)) || 0, importedMaxId + 1);
-        localStorage.setItem(counterKey, String(nextId));
         updateCsvCache();
         alert('Imported invoices. You can now view previous bills.');
       } catch (err) {
@@ -822,7 +815,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  function buildInvoiceData() {
+  function buildInvoiceData(invoiceNumber = null) {
     const cust = customerInput.value.trim();
     if (!cust) {
       alert('Enter customer name first.');
@@ -860,7 +853,7 @@ document.addEventListener('DOMContentLoaded', () => {
     dailyRows.forEach(r => { if (!r.is_empty && r.amount !== null) { if (r.day_num <= 15) t1 += Number(r.amount); else t2 += Number(r.amount); } });
     return {
       module: 'mod3',
-      invoiceId: editingInvoiceId || getNextInvoiceId(),
+      invoiceId: editingInvoiceId || invoiceNumber,
       customerName: cust,
       monthYearISO: `${y}-${String(m).padStart(2,'0')}-01`,
       monthText: `${monthNames[m - 1]} ${y}`,
@@ -873,7 +866,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // central save routine for create/update/draft
-  function handleSave({ asDraft = false, updateExisting = false } = {}) {
+  async function handleSave({ asDraft = false, updateExisting = false } = {}) {
     if (saveInProgress) return;
     saveInProgress = true;
 
@@ -881,6 +874,16 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!invoiceObj) {
       saveInProgress = false;
       return;
+    }
+
+    if (!updateExisting && !editingInvoiceId) {
+      try {
+        invoiceObj.invoiceId = await window.InvoiceCloudSync.allocateInvoiceId();
+      } catch (error) {
+        saveInProgress = false;
+        alert(error.message || 'Could not allocate a shared invoice number. Check your connection and try again.');
+        return;
+      }
     }
 
     if (updateExisting) {

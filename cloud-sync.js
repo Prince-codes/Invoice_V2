@@ -42,6 +42,18 @@
     }
   }
 
+  async function allocateInvoiceId() {
+    const response = await fetch(`${API_PATH}/next-id`, {
+      method: 'POST',
+      cache: 'no-store'
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !Number.isSafeInteger(result.invoiceId) || result.invoiceId < 100) {
+      throw new Error(result.error || 'Could not get the next invoice number from cloud.');
+    }
+    return result.invoiceId;
+  }
+
   async function fetchInvoicesFromCloud(module) {
     const moduleKey = getModuleKey(module);
     const invoices = [];
@@ -78,6 +90,43 @@
     } while (offset < total);
 
     return invoices;
+  }
+
+  function cacheCloudInvoicesLocally(invoices, module) {
+    const moduleKey = getModuleKey(module);
+    let localInvoices = [];
+    try {
+      const stored = JSON.parse(localStorage.getItem('invoices') || '[]');
+      if (!Array.isArray(stored)) {
+        throw new Error('Stored invoice data is not a list.');
+      }
+      localInvoices = stored;
+    } catch (error) {
+      console.error('Unable to read local invoice history before cloud refresh:', error);
+      throw new Error('Could not refresh local invoice history because the stored data could not be read.');
+    }
+
+    for (const cloudInvoice of invoices) {
+      const invoice = { ...cloudInvoice };
+      delete invoice._cloudDatabaseId;
+      invoice.module = moduleKey;
+      const index = localInvoices.findIndex((localInvoice) =>
+        localInvoice.module === moduleKey
+        && String(localInvoice.invoiceId) === String(invoice.invoiceId)
+      );
+      if (index >= 0) {
+        localInvoices[index] = invoice;
+      } else {
+        localInvoices.push(invoice);
+      }
+    }
+
+    try {
+      localStorage.setItem('invoices', JSON.stringify(localInvoices));
+    } catch (error) {
+      console.error('Unable to cache cloud invoices locally:', error);
+      throw new Error('Cloud invoices loaded, but could not be cached on this device.');
+    }
   }
 
   async function updateInvoiceByInvoiceNumber(invoice, module) {
@@ -139,7 +188,9 @@
 
   window.InvoiceCloudSync = {
     saveInvoiceToCloud,
+    allocateInvoiceId,
     fetchInvoicesFromCloud,
+    cacheCloudInvoicesLocally,
     updateInvoiceByInvoiceNumber,
     updateInvoiceInCloud,
     deleteInvoiceFromCloud,
