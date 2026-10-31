@@ -23,7 +23,7 @@ For local development with Cloudflare Pages, see [Local development](#local-deve
 
 ## Invoice data and numbering
 
-Each module saves invoices in the browser's `localStorage`. New invoices are also sent to the configured D1 database for Cloud Invoice Management. If cloud sync fails, the local invoice remains saved and the application reports the sync failure.
+Each module saves new invoices in the browser's `localStorage` and also sends them to the configured D1 database. In each module's **Previous Bills** window, use **This device** or **Cloud** to choose which history to view. Cloud history can be opened in that module's existing editor and printed with its existing invoice layout. When a cloud invoice is edited, the cloud record is updated and a local copy is added or refreshed. If cloud sync fails during a new save, the local invoice remains saved and the application reports the sync failure.
 
 Browser history belongs to that browser and device. Existing local invoices are not automatically migrated to D1, and clearing browser data can remove the local copy. Cloud Invoice Management reads D1 records and requires a valid login.
 
@@ -32,7 +32,7 @@ Each module has its own invoice-number counter that starts at 100 in a browser a
 ## Exports and backups
 
 - Cloud Invoice Management can export the selected module's records as CSV or as an Excel workbook with one worksheet per invoice.
-- Invoice module pages provide Excel exports of their local history.
+- Invoice module pages export the history selected in the Previous Bills source toggle (local or cloud).
 - Mod 2 also supports saving an individual invoice as an image.
 - Printed invoices use the selected module's invoice layout.
 

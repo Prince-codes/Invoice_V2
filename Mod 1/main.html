@@ -93,6 +93,11 @@
         <button class="close" id="closePreviousModal" title="Close">&times;</button>
       </header>
       <div class="modal-body previous-bills-body">
+        <div class="history-source-toggle" role="group" aria-label="Invoice history source">
+          <button type="button" class="btn history-source-btn is-active" id="historyLocalBtn" aria-pressed="true">This device</button>
+          <button type="button" class="btn history-source-btn" id="historyCloudBtn" aria-pressed="false">Cloud</button>
+          <span id="historySourceStatus" class="history-source-status">Showing invoices saved on this device.</span>
+        </div>
         <table id="previousBillsTable" class="previous-bills-table">
           <thead>
             <tr>

@@ -42,6 +42,44 @@
     }
   }
 
+  async function fetchInvoicesFromCloud(module) {
+    const moduleKey = getModuleKey(module);
+    const invoices = [];
+    let offset = 0;
+    let total = 0;
+
+    do {
+      const query = new URLSearchParams({
+        module: moduleKey,
+        limit: '100',
+        offset: String(offset)
+      });
+      const response = await fetch(`${API_PATH}?${query}`, { cache: 'no-store' });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(result.error || 'Unable to load invoices from cloud.');
+      }
+
+      const page = Array.isArray(result.invoices) ? result.invoices : [];
+      invoices.push(...page.map((record) => ({
+        ...(record.invoice_data || {}),
+        module: record.module,
+        invoiceId: record.invoice_data?.invoiceId ?? record.invoice_id,
+        customerName: record.invoice_data?.customerName || record.customer_name || '',
+        createdAt: record.invoice_data?.createdAt || record.created_at,
+        _cloudDatabaseId: record.id
+      })));
+      total = Number(result.total ?? invoices.length);
+      offset += page.length;
+
+      if (!page.length && offset < total) {
+        throw new Error('Cloud invoice history could not be fully loaded.');
+      }
+    } while (offset < total);
+
+    return invoices;
+  }
+
   async function updateInvoiceByInvoiceNumber(invoice, module) {
     const payload = buildCloudPayload(invoice, module);
     payload.lookupByInvoiceNumber = true;
@@ -101,6 +139,7 @@
 
   window.InvoiceCloudSync = {
     saveInvoiceToCloud,
+    fetchInvoicesFromCloud,
     updateInvoiceByInvoiceNumber,
     updateInvoiceInCloud,
     deleteInvoiceFromCloud,

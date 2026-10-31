@@ -19,9 +19,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const printEditedBtn = document.getElementById('printEditedBtn');
   const previousBillsModal = document.getElementById('previousBillsModal');
   const previousBillsTableBody = document.querySelector('#previousBillsTable tbody');
+  const historyLocalBtn = document.getElementById('historyLocalBtn');
+  const historyCloudBtn = document.getElementById('historyCloudBtn');
+  const historySourceStatus = document.getElementById('historySourceStatus');
   let editingInvoiceId = null;
   let editingCloudInvoiceId = null;
   let saveInProgress = false;
+  let historySource = 'local';
 
   window.InvoiceAuth.initializeUserDisplay('userDisplay').catch((error) => {
     console.error('Unable to verify the login session:', error);
@@ -150,7 +154,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return value.trim() === '-' ? 1 : Number(value);
   }
 
-  function readItems() {
+  function readItems(allowIncomplete = false) {
     const items = [];
     let invalid = false;
     tablesContainer.querySelectorAll('.item-row').forEach((row, index) => {
@@ -158,34 +162,54 @@ document.addEventListener('DOMContentLoaded', () => {
       const quantityRaw = row.querySelector('.item-quantity').value.trim();
       const quantityUnit = row.querySelector('.item-unit')?.value || 'Kg';
       const quoteRaw = row.querySelector('.item-quote').value.trim();
-      if (!name && !quantityRaw && !quoteRaw) return;
+      if (!allowIncomplete && !name && !quantityRaw && !quoteRaw) return;
       const quantity = parseQuantity(quantityRaw);
       const quotePrice = Number(quoteRaw);
-      if (!name || !quantityRaw || !quoteRaw || !Number.isFinite(quantity) || !Number.isFinite(quotePrice) || quantity < 0 || quotePrice < 0) invalid = true;
-      items.push({ sNo: index + 1, name, quantity, unit: quantityUnit, quotePrice, price: quantity * quotePrice });
+      const hasCompleteValues = Boolean(name && quantityRaw && quoteRaw)
+        && Number.isFinite(quantity)
+        && Number.isFinite(quotePrice)
+        && quantity >= 0
+        && quotePrice >= 0;
+      if (!allowIncomplete && !hasCompleteValues) invalid = true;
+      if (allowIncomplete) {
+        items.push({
+          sNo: index + 1,
+          name,
+          quantity: quantityRaw && Number.isFinite(quantity) ? quantity : quantityRaw,
+          unit: quantityUnit,
+          quotePrice: quoteRaw && Number.isFinite(quotePrice) ? quotePrice : quoteRaw,
+          price: hasCompleteValues ? quantity * quotePrice : 0
+        });
+      } else {
+        items.push({ sNo: index + 1, name, quantity, unit: quantityUnit, quotePrice, price: quantity * quotePrice });
+      }
     });
-    if (invalid || items.length === 0) {
+    if (!allowIncomplete && (invalid || items.length === 0)) {
       alert('Add at least one item with a name, quantity, and valid non-negative rate.');
       return null;
     }
     return items;
   }
 
-  function buildInvoiceData() {
-    const items = readItems();
+  function buildInvoiceData(allowIncomplete = false) {
+    const items = readItems(allowIncomplete);
     if (!items) return null;
 
-    const previousDues = Number(previousDuesInput.value || 0);
+    const previousDuesRaw = previousDuesInput.value.trim();
+    const previousDues = Number(previousDuesRaw || 0);
     const transportationCharged = transportationChargedInput.checked;
-    const transportationCharge = transportationCharged ? Number(transportationChargeInput.value || 0) : 0;
-    if (!Number.isFinite(transportationCharge) || transportationCharge < 0) {
+    const transportationChargeRaw = transportationChargeInput.value.trim();
+    const transportationCharge = transportationCharged ? Number(transportationChargeRaw || 0) : 0;
+    if (!allowIncomplete && (!Number.isFinite(transportationCharge) || transportationCharge < 0)) {
       alert('Enter a valid non-negative transportation charge.');
       return null;
     }
     const itemTotal = items.reduce((sum, item) => sum + item.price, 0);
-    const total = itemTotal + (Number.isFinite(previousDues) && previousDues >= 0 ? previousDues : 0) + transportationCharge;
+    const total = itemTotal
+      + (Number.isFinite(previousDues) && previousDues >= 0 ? previousDues : 0)
+      + (Number.isFinite(transportationCharge) && transportationCharge >= 0 ? transportationCharge : 0);
     const customerName = editorCustomerInput.value.trim();
-    if (!customerName) {
+    if (!allowIncomplete && !customerName) {
       alert('Enter customer name first.');
       return null;
     }
@@ -199,14 +223,19 @@ document.addEventListener('DOMContentLoaded', () => {
       billingDate: billingDateInput.value,
       dateText: formatDate(billingDateInput.value),
       items,
-      previousDues: Number(previousDues.toFixed(2)),
+      previousDues: allowIncomplete && !previousDuesRaw
+        ? ''
+        : (Number.isFinite(previousDues) ? Number(previousDues.toFixed(2)) : previousDuesRaw),
       transportationCharged,
-      transportationCharge: Number(transportationCharge.toFixed(2)),
+      transportationCharge: allowIncomplete && transportationCharged && !transportationChargeRaw
+        ? ''
+        : (Number.isFinite(transportationCharge) ? Number(transportationCharge.toFixed(2)) : transportationChargeRaw),
       total: Number(total.toFixed(2)),
       totals: { grand: Number(total.toFixed(2)) },
-      totalWords: amountWords.value || numberToWords(Math.round(total)),
+      totalWords: allowIncomplete ? amountWords.value : (amountWords.value || numberToWords(Math.round(total))),
       createdAt: new Date().toISOString(),
-      createdBy: ''
+      createdBy: '',
+      ...(allowIncomplete ? { isDraft: true } : {})
     };
   }
 
@@ -219,7 +248,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function handleSave(asDraft, updateExisting) {
     if (saveInProgress) return;
     saveInProgress = true;
-    const invoice = buildInvoiceData();
+    const invoice = buildInvoiceData(asDraft);
     if (!invoice) { saveInProgress = false; return; }
 
     const invoices = loadInvoices();
@@ -229,7 +258,9 @@ document.addEventListener('DOMContentLoaded', () => {
         window.InvoiceCloudSync.updateInvoiceInCloud(invoice, 'mod2', editingCloudInvoiceId)
           .then((result) => {
             if (!result.ok) throw new Error(result.error || 'Cloud invoice update failed.');
-            window.location.href = '../Management/management.html';
+            upsertLocalInvoice(invoice);
+            closeEditor();
+            alert('Invoice updated.');
           })
           .catch((error) => {
             console.error('Unable to update cloud invoice:', error);
@@ -265,6 +296,18 @@ document.addEventListener('DOMContentLoaded', () => {
     try { return JSON.parse(localStorage.getItem('invoices') || '[]'); } catch (error) { return []; }
   }
 
+  function upsertLocalInvoice(invoice) {
+    const invoices = loadInvoices();
+    const index = invoices.findIndex(item =>
+      String(item.invoiceId) === String(invoice.invoiceId)
+      && (item.module === 'mod2' || (!item.module && Array.isArray(item.items)))
+    );
+    if (index >= 0) invoices[index] = invoice;
+    else invoices.push(invoice);
+    localStorage.setItem('invoices', JSON.stringify(invoices));
+    updateCsvCache();
+  }
+
   function csvValue(value) {
     return `"${String(value).replace(/"/g, '""')}"`;
   }
@@ -289,28 +332,65 @@ document.addEventListener('DOMContentLoaded', () => {
     localStorage.setItem('invoices_csv', [header.join(','), ...rows].join('\n'));
   }
 
-  function showPreviousBills() {
-    const invoices = loadInvoices()
-      .filter(invoice => invoice.module === 'mod2' || (!invoice.module && Array.isArray(invoice.items)))
-      .sort((a, b) => Number(a.invoiceId) - Number(b.invoiceId));
-    if (!invoices.length) return alert('No previous invoices found. Save some invoices first.');
+  async function showPreviousBills(source = historySource) {
+    historySource = source;
+    historyLocalBtn.classList.toggle('is-active', source === 'local');
+    historyCloudBtn.classList.toggle('is-active', source === 'cloud');
+    historyLocalBtn.setAttribute('aria-pressed', String(source === 'local'));
+    historyCloudBtn.setAttribute('aria-pressed', String(source === 'cloud'));
+    historySourceStatus.textContent = source === 'cloud' ? 'Loading cloud invoices…' : 'Showing invoices saved on this device.';
     previousBillsTableBody.innerHTML = '';
+    previousBillsModal.classList.add('show');
+    let invoices;
+    try {
+      invoices = source === 'cloud'
+        ? await window.InvoiceCloudSync.fetchInvoicesFromCloud('mod2')
+        : loadInvoices().filter(invoice => invoice.module === 'mod2' || (!invoice.module && Array.isArray(invoice.items)));
+    } catch (error) {
+      historySourceStatus.textContent = 'Unable to load cloud invoices.';
+      previousBillsTableBody.innerHTML = `<tr><td colspan="5">${escapeHtml(error.message || 'Unable to load invoices.')}</td></tr>`;
+      return;
+    }
+
+    invoices.sort((a, b) => Number(a.invoiceId) - Number(b.invoiceId));
+    historySourceStatus.textContent = source === 'cloud'
+      ? `Showing ${invoices.length} cloud invoice${invoices.length === 1 ? '' : 's'}.`
+      : 'Showing invoices saved on this device.';
+    if (!invoices.length) {
+      previousBillsTableBody.innerHTML = '<tr><td colspan="5">No previous invoices found.</td></tr>';
+      return;
+    }
+
     invoices.forEach(invoice => {
       const row = document.createElement('tr');
-      row.innerHTML = `<td>${invoice.invoiceId}</td><td>${escapeHtml(invoice.customerName)}</td><td>${escapeHtml(invoice.dateText || invoice.billingDate || '')}</td><td>${Number(invoice.total || invoice.totals?.grand || 0).toFixed(2)}</td><td><button type="button" class="btn">Print</button></td>`;
-      row.querySelector('button').addEventListener('click', event => { event.stopPropagation(); openPrintWindow(invoice); });
+      [invoice.invoiceId, invoice.customerName, invoice.dateText || invoice.billingDate || '',
+        Number(invoice.total || invoice.totals?.grand || 0).toFixed(2)].forEach(value => {
+        const cell = document.createElement('td');
+        cell.textContent = value ?? '';
+        row.appendChild(cell);
+      });
+      const actionCell = document.createElement('td');
+      const printButton = document.createElement('button');
+      printButton.type = 'button';
+      printButton.className = 'btn';
+      printButton.textContent = 'Print';
+      actionCell.appendChild(printButton);
+      row.appendChild(actionCell);
+      printButton.addEventListener('click', event => { event.stopPropagation(); openPrintWindow(invoice); });
       row.addEventListener('click', () => openInvoiceInEditor(invoice));
       previousBillsTableBody.appendChild(row);
     });
     previousBillsModal.classList.add('show');
   }
 
-  document.getElementById('viewPreviousBtn').addEventListener('click', showPreviousBills);
+  document.getElementById('viewPreviousBtn').addEventListener('click', () => showPreviousBills(historySource));
+  historyLocalBtn.addEventListener('click', () => showPreviousBills('local'));
+  historyCloudBtn.addEventListener('click', () => showPreviousBills('cloud'));
   document.getElementById('closePreviousModal').addEventListener('click', () => previousBillsModal.classList.remove('show'));
 
   function openInvoiceInEditor(invoice) {
     editingInvoiceId = invoice.invoiceId;
-    editingCloudInvoiceId = null;
+    editingCloudInvoiceId = invoice._cloudDatabaseId ?? null;
     customerInput.value = invoice.customerName || '';
     editorCustomerInput.value = invoice.customerName || '';
     billingDateInput.value = invoice.billingDate || (invoice.monthYearISO ? invoice.monthYearISO.slice(0, 10) : '');
@@ -392,10 +472,16 @@ document.addEventListener('DOMContentLoaded', () => {
     return `<!doctype html><html><head><meta charset="utf-8"><title>Invoice ${escapeHtml(invoiceNumber)}</title><style>@page{size:A4;margin:12mm}*{box-sizing:border-box}body{margin:0;color:#172033;font:13px Montserrat,'Segoe UI',sans-serif}.invoice{max-width:190mm;margin:auto}.header{display:flex;justify-content:space-between;gap:20px;border-bottom:3px solid #d9902f;padding-bottom:14px}.brand{display:flex;gap:12px;align-items:center}.logo{width:64px;height:64px;border-radius:50%;object-fit:cover}.company h1{margin:0 0 4px;font-size:20px;letter-spacing:1px}.company p{margin:3px 0;color:#657083;font-size:11px}.meta{text-align:right;color:#657083}.meta strong{display:block;color:#172033;font-size:15px;margin-bottom:8px}.bill-to{display:flex;justify-content:space-between;margin:22px 0 16px;padding:12px;background:#f5f7f9;border-left:4px solid #d9902f}.bill-to span{display:block;color:#657083;font-size:10px;text-transform:uppercase}.bill-to strong{font-size:16px}.items{width:100%;border-collapse:collapse}.items th{background:#172033;color:#fff}.items th,.items td{padding:10px 9px;border-bottom:1px solid #dce1e8;text-align:left}.items .number{text-align:right;font-variant-numeric:tabular-nums}.items tfoot td{font-weight:700;background:#f5f7f9}.summary{display:flex;justify-content:space-between;gap:20px;margin-top:22px;padding:14px;background:#f5f7f9}.grand{font-size:17px;font-weight:700}.grand .dues{display:block;font-size:13px;font-weight:600;color:#657083;margin-bottom:5px}.grand strong{display:block;font-size:21px}.words{max-width:55%;color:#657083}.words strong{display:block;color:#172033;margin-bottom:5px}.signature{text-align:right;margin-top:48px;font-weight:700}.signature span{display:block;border-top:2px solid #172033;padding-top:7px}.footer{text-align:center;color:#657083;margin-top:28px;font-size:15px;font-weight:600}@media print{.invoice{max-width:none}.items{break-inside:avoid}.summary{break-inside:avoid}}</style></head><body><main class="invoice"><header class="header"><div class="brand"><img class="logo" src="${new URL('../Assets/logo.png', window.location.href).href}" alt="Logo"><div class="company"><h1>Shankar Vegetable Shop</h1><p>Gamharia Market Complex • 832108</p><p>Phone: 8210945932</p></div></div><div class="meta"><strong>Invoice No. #${escapeHtml(invoice.invoiceId || invoice.invoiceNumber || '')}</strong><div>${escapeHtml(invoice.dateText || invoice.billingDate || '')}</div></div></header><section class="bill-to"><div><span>Bill To</span><strong>${escapeHtml(invoice.customerName || 'Customer')}</strong></div><div><span>Bill of Date</span><strong>${escapeHtml(invoice.dateText || invoice.billingDate || '')}</strong></div></section><table class="items"><thead><tr><th>S.No</th><th>Item</th><th class="number">Qty / Unit</th><th class="number">Rate</th><th class="number">Price</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td colspan="4">Total Amount</td><td class="number">₹ ${total}</td></tr></tfoot></table><section class="summary"><div class="grand"><span class="dues">Previous Dues: ₹ ${Number(invoice.previousDues || 0).toFixed(2)}</span><strong>Total Amount: ₹ ${total}</strong></div><div class="words"><strong>Total Amount in Words</strong>${escapeHtml(invoice.totalWords || '')}</div></section><div class="signature"><span>Shankar Vegetable Shop</span></div><div class="footer">Thank You &amp; Visit Us Again.</div></main></body></html>`;
   }
 
-  document.getElementById('exportCsvBtn').addEventListener('click', () => {
-    const invoices = loadInvoices();
-    if (!invoices.length) return alert('No invoices to export.');
-    downloadExcelWorkbook(invoices);
+  document.getElementById('exportCsvBtn').addEventListener('click', async () => {
+    try {
+      const invoices = historySource === 'cloud'
+        ? await window.InvoiceCloudSync.fetchInvoicesFromCloud('mod2')
+        : loadInvoices().filter(invoice => invoice.module === 'mod2' || (!invoice.module && Array.isArray(invoice.items)));
+      if (!invoices.length) return alert('No invoices to export.');
+      downloadExcelWorkbook(invoices);
+    } catch (error) {
+      alert(error.message || 'Unable to load invoices for export.');
+    }
   });
 
   function downloadExcelWorkbook(invoices) {

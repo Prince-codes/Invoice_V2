@@ -24,6 +24,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const previousBillsModal = document.getElementById('previousBillsModal');
   const closePreviousModal = document.getElementById('closePreviousModal');
   const previousBillsTableBody = document.querySelector("#previousBillsTable tbody");
+  const historyLocalBtn = document.getElementById('historyLocalBtn');
+  const historyCloudBtn = document.getElementById('historyCloudBtn');
+  const historySourceStatus = document.getElementById('historySourceStatus');
 
   // Editor controls
   const saveDraftBtn = document.getElementById('saveDraftBtn');
@@ -34,6 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let editingInvoiceId = null;
   let editingCloudInvoiceId = null;
   let saveInProgress = false;
+  let historySource = 'local';
 
   // CSV import/export buttons
   const exportCsvBtn = document.getElementById('exportCsvBtn');
@@ -546,49 +550,74 @@ document.addEventListener('DOMContentLoaded', () => {
     return `${y}-${m}-${dd}`;
   }
 
-  // Previous bills modal logic (client-side)
   if (viewPreviousBtn) {
     viewPreviousBtn.addEventListener('click', () => {
-    previousBillsTableBody.innerHTML = "";
-    let invoices = loadInvoicesFromStorage().filter(inv => inv.module === 'mod3' || (!inv.module && Array.isArray(inv.daily)));
-    if (!invoices || invoices.length === 0) {
-      alert('No previous invoices found. Save some invoices first.');
-      return;
+      previousBillsModal.style.display = 'block';
+      showPreviousBills(historySource);
+    });
+  }
+
+  historyLocalBtn.addEventListener('click', () => showPreviousBills('local'));
+  historyCloudBtn.addEventListener('click', () => showPreviousBills('cloud'));
+
+  async function showPreviousBills(source) {
+    historySource = source;
+    historyLocalBtn.classList.toggle('is-active', source === 'local');
+    historyCloudBtn.classList.toggle('is-active', source === 'cloud');
+    historyLocalBtn.setAttribute('aria-pressed', String(source === 'local'));
+    historyCloudBtn.setAttribute('aria-pressed', String(source === 'cloud'));
+    historySourceStatus.textContent = source === 'cloud' ? 'Loading cloud invoices…' : 'Showing invoices saved on this device.';
+    previousBillsTableBody.innerHTML = '';
+
+    try {
+      let invoices = source === 'cloud'
+        ? await window.InvoiceCloudSync.fetchInvoicesFromCloud('mod3')
+        : loadInvoicesFromStorage().filter(inv => inv.module === 'mod3' || (!inv.module && Array.isArray(inv.daily)));
+      invoices.sort((a, b) => Number(a.invoiceId) - Number(b.invoiceId));
+      historySourceStatus.textContent = source === 'cloud'
+        ? `Showing ${invoices.length} cloud invoice${invoices.length === 1 ? '' : 's'}.`
+        : 'Showing invoices saved on this device.';
+
+      if (!invoices.length) {
+        previousBillsTableBody.innerHTML = '<tr><td colspan="5">No previous invoices found.</td></tr>';
+        return;
+      }
+
+      invoices.forEach(inv => {
+        const row = document.createElement('tr');
+        row.style.cursor = 'pointer';
+        const monthText = inv.monthText || inv.monthYearISO || '';
+        [inv.invoiceId, inv.customerName, monthText, Number(inv.totals?.grand || inv.total || 0).toFixed(2)]
+          .forEach(value => {
+            const cell = document.createElement('td');
+            cell.style.textAlign = 'center';
+            cell.textContent = value ?? '';
+            row.appendChild(cell);
+          });
+
+        const printCell = document.createElement('td');
+        printCell.style.textAlign = 'center';
+        const printBtn = document.createElement('button');
+        printBtn.textContent = 'Print';
+        printBtn.className = 'btn';
+        printBtn.style.padding = '8px 10px';
+        printBtn.addEventListener('click', event => {
+          event.stopPropagation();
+          previousBillsModal.style.display = 'none';
+          openPrintWindow(inv);
+        });
+        printCell.appendChild(printBtn);
+        row.appendChild(printCell);
+        row.addEventListener('click', () => {
+          previousBillsModal.style.display = 'none';
+          openInvoiceInEditor(inv);
+        });
+        previousBillsTableBody.appendChild(row);
+      });
+    } catch (error) {
+      historySourceStatus.textContent = `Unable to load ${source} invoices.`;
+      previousBillsTableBody.innerHTML = `<tr><td colspan="5">${escapeHtml(error.message || 'Unable to load invoices.')}</td></tr>`;
     }
-    invoices = invoices.sort((a, b) => Number(a.invoiceId) - Number(b.invoiceId));
-    invoices.forEach(inv => {
-      const row = document.createElement('tr');
-      let monthText = inv.monthText || inv.monthYearISO;
-      row.innerHTML = `
-        <td style="text-align:center;">${inv.invoiceId}</td>
-        <td style="text-align:center;">${inv.customerName}</td>
-        <td style="text-align:center;">${monthText}</td>
-        <td style="text-align:center;">${(inv.totals && inv.totals.grand) ? Number(inv.totals.grand).toFixed(2) : ''}</td>
-      `;
-      row.style.cursor = 'pointer';
-
-      const printCell = document.createElement('td');
-      printCell.style.textAlign = 'center';
-      const printBtn = document.createElement('button');
-      printBtn.textContent = 'Print';
-      printBtn.className = 'btn';
-      printBtn.style.padding = '8px 10px';
-      printBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        previousBillsModal.style.display = 'none';
-        openPrintWindow(inv);
-      });
-      printCell.appendChild(printBtn);
-      row.appendChild(printCell);
-
-      row.addEventListener('click', () => {
-        previousBillsModal.style.display = 'none';
-        openInvoiceInEditor(inv);
-      });
-      previousBillsTableBody.appendChild(row);
-    });
-    previousBillsModal.style.display = 'block';
-    });
   }
 
   if (closePreviousModal) {
@@ -599,10 +628,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Excel export with one worksheet per invoice
   if (exportCsvBtn) {
-    exportCsvBtn.addEventListener('click', () => {
-    const invoices = loadInvoicesFromStorage().filter(inv => inv.module === 'mod3' || (!inv.module && Array.isArray(inv.daily)));
-    if (!invoices.length) return alert('No invoices to export.');
-    downloadExcelWorkbook(invoices);
+    exportCsvBtn.addEventListener('click', async () => {
+      try {
+        const invoices = historySource === 'cloud'
+          ? await window.InvoiceCloudSync.fetchInvoicesFromCloud('mod3')
+          : loadInvoicesFromStorage().filter(inv => inv.module === 'mod3' || (!inv.module && Array.isArray(inv.daily)));
+        if (!invoices.length) return alert('No invoices to export.');
+        downloadExcelWorkbook(invoices);
+      } catch (error) {
+        alert(error.message || 'Unable to load invoices for export.');
+      }
     });
   }
 
@@ -734,7 +769,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!modal || !tablesContainer || !monthSelect || !yearSelect) return;
     // populate fields
     editingInvoiceId = inv.invoiceId;
-    editingCloudInvoiceId = null;
+    editingCloudInvoiceId = inv._cloudDatabaseId ?? null;
     customerInput.value = inv.customerName || '';
     // set month/year selects from monthYearISO if available
     try {
@@ -859,7 +894,9 @@ document.addEventListener('DOMContentLoaded', () => {
         window.InvoiceCloudSync.updateInvoiceInCloud(invoiceObj, 'mod3', editingCloudInvoiceId)
           .then((result) => {
             if (!result.ok) throw new Error(result.error || 'Cloud invoice update failed.');
-            window.location.href = '../Management/management.html';
+            upsertLocalInvoice(invoiceObj);
+            close();
+            alert('Invoice updated.');
           })
           .catch((error) => {
             console.error('Unable to update cloud invoice:', error);
@@ -917,6 +954,18 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error('Unable to open cloud invoice for editing:', error);
       alert(error.message || 'Unable to open cloud invoice for editing.');
     }
+  }
+
+  function upsertLocalInvoice(invoice) {
+    const invoices = loadInvoicesFromStorage();
+    const index = invoices.findIndex(item =>
+      Number(item.invoiceId) === Number(invoice.invoiceId)
+      && (item.module === 'mod3' || (!item.module && Array.isArray(item.daily)))
+    );
+    if (index >= 0) invoices[index] = invoice;
+    else invoices.push(invoice);
+    localStorage.setItem('invoices', JSON.stringify(invoices));
+    updateCsvCache();
   }
 
   loadCloudInvoiceForEdit();

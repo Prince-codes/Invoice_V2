@@ -22,6 +22,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const previousBillsModal = document.getElementById('previousBillsModal');
   const closePreviousModal = document.getElementById('closePreviousModal');
   const previousBillsTableBody = document.querySelector('#previousBillsTable tbody');
+  const historyLocalBtn = document.getElementById('historyLocalBtn');
+  const historyCloudBtn = document.getElementById('historyCloudBtn');
+  const historySourceStatus = document.getElementById('historySourceStatus');
   const saveDraftBtn = document.getElementById('saveDraftBtn');
   const updateBtn = document.getElementById('updateBtn');
   const printEditedBtn = document.getElementById('printEditedBtn');
@@ -30,6 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let editingInvoiceId = null;
   let editingCloudInvoiceId = null;
   let saveInProgress = false;
+  let historySource = 'local';
 
   const monthNames = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -450,46 +454,71 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (viewPreviousBtn) {
     viewPreviousBtn.addEventListener('click', () => {
-      let invoices = loadInvoicesFromStorage().filter(inv => inv.module === 'mod1' || (!inv.module && Array.isArray(inv.daily)));
-      if (!invoices || invoices.length === 0) {
-        alert('No previous invoices found. Save some invoices first.');
+      previousBillsModal.style.display = 'block';
+      showPreviousBills(historySource);
+    });
+  }
+
+  if (historyLocalBtn) historyLocalBtn.addEventListener('click', () => showPreviousBills('local'));
+  if (historyCloudBtn) historyCloudBtn.addEventListener('click', () => showPreviousBills('cloud'));
+
+  async function showPreviousBills(source) {
+    historySource = source;
+    historyLocalBtn?.classList.toggle('is-active', source === 'local');
+    historyCloudBtn?.classList.toggle('is-active', source === 'cloud');
+    historyLocalBtn?.setAttribute('aria-pressed', String(source === 'local'));
+    historyCloudBtn?.setAttribute('aria-pressed', String(source === 'cloud'));
+    historySourceStatus.textContent = source === 'cloud' ? 'Loading cloud invoices…' : 'Showing invoices saved on this device.';
+    previousBillsTableBody.innerHTML = '';
+
+    try {
+      let invoices = source === 'cloud'
+        ? await window.InvoiceCloudSync.fetchInvoicesFromCloud('mod1')
+        : loadInvoicesFromStorage().filter(inv => inv.module === 'mod1' || (!inv.module && Array.isArray(inv.daily)));
+      invoices = invoices.sort((a, b) => String(a.invoiceId).localeCompare(String(b.invoiceId), undefined, { numeric: true }));
+      historySourceStatus.textContent = source === 'cloud'
+        ? `Showing ${invoices.length} cloud invoice${invoices.length === 1 ? '' : 's'}.`
+        : 'Showing invoices saved on this device.';
+
+      if (!invoices.length) {
+        previousBillsTableBody.innerHTML = '<tr><td colspan="5">No previous invoices found.</td></tr>';
         return;
       }
-      invoices = invoices.sort((a, b) => String(a.invoiceId).localeCompare(String(b.invoiceId), undefined, { numeric: true }));
-      previousBillsTableBody.innerHTML = '';
+
       invoices.forEach(inv => {
         const row = document.createElement('tr');
-        row.innerHTML = `
-          <td style="text-align:center;">${inv.invoiceId}</td>
-          <td style="text-align:center;">${inv.customerName}</td>
-          <td style="text-align:center;">${inv.monthText || inv.monthYearISO}</td>
-          <td style="text-align:center;">${(inv.totals && inv.totals.grand) ? Number(inv.totals.grand).toFixed(2) : ''}</td>
-        `;
         row.style.cursor = 'pointer';
+        [inv.invoiceId, inv.customerName, inv.monthText || inv.monthYearISO,
+          Number(inv.totals?.grand || inv.total || 0).toFixed(2)].forEach(value => {
+          const cell = document.createElement('td');
+          cell.style.textAlign = 'center';
+          cell.textContent = value ?? '';
+          row.appendChild(cell);
+        });
 
         const printCell = document.createElement('td');
         printCell.style.textAlign = 'center';
-
         const printBtn = document.createElement('button');
         printBtn.textContent = 'Print';
         printBtn.className = 'btn';
         printBtn.style.padding = '8px 10px';
-        printBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
+        printBtn.addEventListener('click', (event) => {
+          event.stopPropagation();
           previousBillsModal.style.display = 'none';
           openPrintWindow(inv);
         });
         printCell.appendChild(printBtn);
         row.appendChild(printCell);
-
         row.addEventListener('click', () => {
           previousBillsModal.style.display = 'none';
           openInvoiceInEditor(inv);
         });
         previousBillsTableBody.appendChild(row);
       });
-      previousBillsModal.style.display = 'block';
-    });
+    } catch (error) {
+      historySourceStatus.textContent = `Unable to load ${source} invoices.`;
+      previousBillsTableBody.innerHTML = `<tr><td colspan="5">${escapeHtml(error.message || 'Unable to load invoices.')}</td></tr>`;
+    }
   }
 
   if (closePreviousModal) {
@@ -499,10 +528,16 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   if (exportCsvBtn) {
-    exportCsvBtn.addEventListener('click', () => {
-      const invoices = loadInvoicesFromStorage();
-      if (!invoices.length) return alert('No invoices to export.');
-      downloadExcelWorkbook(invoices);
+    exportCsvBtn.addEventListener('click', async () => {
+      try {
+        const invoices = historySource === 'cloud'
+          ? await window.InvoiceCloudSync.fetchInvoicesFromCloud('mod1')
+          : loadInvoicesFromStorage().filter(inv => inv.module === 'mod1' || (!inv.module && Array.isArray(inv.daily)));
+        if (!invoices.length) return alert('No invoices to export.');
+        downloadExcelWorkbook(invoices);
+      } catch (error) {
+        alert(error.message || 'Unable to load invoices for export.');
+      }
     });
   }
 
@@ -528,7 +563,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function openInvoiceInEditor(inv) {
     if (!modal || !tablesContainer || !monthSelect || !yearSelect) return;
     editingInvoiceId = inv.invoiceId;
-    editingCloudInvoiceId = null;
+    editingCloudInvoiceId = inv._cloudDatabaseId ?? null;
     customerInput.value = inv.customerName || '';
 
     try {
@@ -659,7 +694,9 @@ document.addEventListener('DOMContentLoaded', () => {
         window.InvoiceCloudSync.updateInvoiceInCloud(invoiceObj, 'mod1', editingCloudInvoiceId)
           .then((result) => {
             if (!result.ok) throw new Error(result.error || 'Cloud invoice update failed.');
-            window.location.href = '../Management/management.html';
+            upsertLocalInvoice(invoiceObj);
+            close();
+            alert('Invoice updated.');
           })
           .catch((error) => {
             console.error('Unable to update cloud invoice:', error);
@@ -718,6 +755,18 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error('Unable to open cloud invoice for editing:', error);
       alert(error.message || 'Unable to open cloud invoice for editing.');
     }
+  }
+
+  function upsertLocalInvoice(invoice) {
+    const invoices = loadInvoicesFromStorage();
+    const index = invoices.findIndex(item =>
+      String(item.invoiceId) === String(invoice.invoiceId)
+      && (item.module === 'mod1' || (!item.module && Array.isArray(item.daily)))
+    );
+    if (index >= 0) invoices[index] = invoice;
+    else invoices.push(invoice);
+    localStorage.setItem('invoices', JSON.stringify(invoices));
+    updateCsvCache();
   }
 
   if (!localStorage.getItem('invoices_csv')) updateCsvCache();

@@ -292,6 +292,29 @@ input:focus, select:focus {
   margin-top: 12px;
 }
 
+.history-source-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+  margin-bottom: 14px;
+}
+
+.history-source-btn.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.history-source-status {
+  flex-basis: 100%;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .previous-bills-note small {
   color: var(--muted);
 }
